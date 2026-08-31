@@ -215,6 +215,8 @@ end
     @test string(Decimal{18,0}(-7)) == "-7"
     @test string(DecimalValue(0, 3)) == "0.000"
     @test parse(Decimal64{2}, " 1.25 ") === Decimal{18,2}("1.25")
+    @test parse(Decimal{9,2}, "1.25") === Decimal{9,2}("1.25")
+    @test tryparse(Decimal{9,2}, "1.25") === Decimal{9,2}("1.25")
     @test parse(Decimal64{2}, "+1.25") === Decimal{18,2}("1.25")
     @test parse(Decimal64{4}, "1.25e2") === Decimal{18,4}("125.0000")
     @test parse(Decimal64{4}, "125e-2") === Decimal{18,4}("1.2500")
@@ -225,6 +227,10 @@ end
     @test tryparse(Decimal64{2}, "1.2.3") === nothing
     @test tryparse(Decimal64{2}, "") === nothing
     @test tryparse(Decimal64{2}, "1e") === nothing
+    huge = string(big(2)^256 - 100)
+    @test_throws OverflowError parse(Decimal{9,0,Int32}, huge)
+    @test_throws OverflowError parse(Decimal{9,0,Int32}, "-" * huge)
+    @test parse(Decimal{1,0}, string(big(10)^77) * "e-77") === Decimal{1,0}(1)
     for (P, S, T) in COMBOS
         DT = Decimal{P, S, T}
         for _ in 1:200

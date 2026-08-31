@@ -172,6 +172,11 @@ function _torescaled(::Type{Decimal{P, S, T}}, u::Integer, s::Int, mode,
                      x) where {P, S, T <: StorageInt}
     neg = u < zero(u)
     m = _tomag256(u)
+    return _torescaled(Decimal{P, S, T}, m, neg, s, mode, x)
+end
+
+function _torescaled(::Type{Decimal{P, S, T}}, m::UInt256, neg::Bool, s::Int,
+                     mode, x) where {P, S, T <: StorageInt}
     if s <= S
         mag, ovf = _scaleup(m, S - s)
         ovf && _throwoverflow(Decimal{P, S, T}, x)
