@@ -128,7 +128,12 @@ end
     @test div(a, b) === RT("27.00")
     @test rem(a, b) === RT("0.10")
     @test mod(-a, b) === RT("0.10")
+    @test fld(-a, b) === RT("-28.00")
+    @test cld(a, b) === RT("28.00")
     @test fldmod(-a, b) === (RT("-28.00"), RT("0.10"))
+    @test fld1(a, b) === RT("28.00")
+    @test mod1(a, b) === RT("0.10")
+    @test fldmod1(a, b) === (RT("28.00"), RT("0.10"))
     @test collect(D("1.20"):D("0.10"):D("1.50")) ==
           D[D("1.20"), D("1.30"), D("1.40"), D("1.50")]
     @test_throws DivideError div(a, zero(b))
@@ -144,6 +149,8 @@ end
     vy = DecimalValue{Int64}(200, 2)
     @test div(vx, vy, RoundNearest) === DecimalValue{Int64}(-300, 2)
     @test rem(vx, vy, RoundNearest) === DecimalValue{Int64}(50, 2)
+    @test fld(vx, vy) === DecimalValue{Int64}(-300, 2)
+    @test cld(-vx, vy) === DecimalValue{Int64}(300, 2)
     small = DecimalValue{Int64}(1, 1)
     large = DecimalValue{Int64}(typemax(Int64), 0)
     @test div(small, large, RoundFromZero) === DecimalValue{Int64}(10, 1)

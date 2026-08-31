@@ -152,6 +152,13 @@ end
     return _decimalquotient(D, q, qneg, x, y)
 end
 
+@inline function Base.fld(x::D, y::D) where {D <: Decimal}
+    return div(x, y, RoundDown)
+end
+@inline function Base.cld(x::D, y::D) where {D <: Decimal}
+    return div(x, y, RoundUp)
+end
+
 function Base.rem(x::D, y::D) where {D <: Decimal}
     return _decimalremainder(x, y, RoundToZero)
 end
@@ -449,6 +456,15 @@ end
 @inline function Base.div(x::DecimalValue{T}, y::DecimalValue{T},
                           mode::RoundingMode) where {T <: StorageInt}
     return _valuequotient(x, y, mode)
+end
+
+@inline function Base.fld(x::DecimalValue{T},
+                          y::DecimalValue{T}) where {T <: StorageInt}
+    return div(x, y, RoundDown)
+end
+@inline function Base.cld(x::DecimalValue{T},
+                          y::DecimalValue{T}) where {T <: StorageInt}
+    return div(x, y, RoundUp)
 end
 
 function Base.rem(x::DecimalValue{T},
