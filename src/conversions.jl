@@ -448,11 +448,73 @@ Base.Rational(x::DecimalValue) = Rational{BigInt}(x)
 # 10^k exactly representable as Float64, k in 0:22
 const _FPOW10 = Float64[10.0^k for k in 0:22]
 
+# Correctly-rounded u/10^s at F's precision without MPFR or BigInt:
+# u/10^s = (u/5^s) * 2^-s, and dividing by 5^s (<= 203 bits) leaves room to
+# pre-shift the numerator so the quotient carries precision+1..+2 bits. One
+# 256-bit division, then standard guard/sticky assembly. Returns (value, ok);
+# ok=false defers to the exact slow path (overflow/underflow/subnormal edges,
+# scales beyond the 5^k table, numerators that cannot be pre-shifted).
+@inline function _tofloatdiv(::Type{F}, m::UInt256, s::Int,
+                             neg::Bool) where {F <: AbstractFloat}
+    p = precision(F)
+    d5 = _upow5_256(s)
+    b = 256 - leading_zeros(m)
+    B5 = 256 - leading_zeros(d5)
+    t = (p + 1) - (b - B5)
+    sticky = false
+    num = m
+    if t >= 0
+        b + t > 256 && return (zero(F), false)
+        num <<= t
+    else
+        sh = -t
+        sticky = (num & ((UInt256(1) << sh) - one(UInt256))) != zero(UInt256)
+        num >>= sh
+    end
+    # divide by 5^s in <= 27-factor chunks: each divisor fits one limb, so
+    # every step is reciprocal 2-by-1 instead of multi-limb Knuth. Exact:
+    # floor(floor(n/a)/b) == floor(n/(a*b)), and the remainders only feed
+    # sticky, which needs no cross-chunk reconstruction.
+    q = num
+    left = s
+    while left > 27
+        q, r1 = _divrem_by1(q, UInt64(5)^27)
+        sticky |= r1 != zero(UInt256)
+        left -= 27
+    end
+    if left > 0
+        q, r2 = _divrem_by1(q, UInt64(5)^left)
+        sticky |= r2 != zero(UInt256)
+    end
+    mant = q % UInt64  # p+1..p+2 bits by construction
+    excess = (64 - leading_zeros(mant)) - p
+    half = one(UInt64) << (excess - 1)
+    dropped = mant & ((one(UInt64) << excess) - one(UInt64))
+    mant >>>= excess
+    if dropped > half || (dropped == half && (sticky || isodd(mant)))
+        mant += one(UInt64)
+        if mant == one(UInt64) << p
+            mant >>>= 1
+            excess += 1
+        end
+    end
+    e2 = excess - t - s  # value = mant * 2^e2, mant has exactly p bits
+    efin = e2 + p - 1
+    (exponent(floatmin(F)) <= efin <= exponent(floatmax(F))) || return (zero(F), false)
+    v = ldexp(F(mant), e2)
+    return (neg ? -v : v, true)
+end
+
 function _tofloat(::Type{F}, u::Integer, s::Int) where {F <: AbstractFloat}
-    # fast path (Float64 only — narrowing afterwards would double-round):
+    # fastest path (Float64 only — narrowing afterwards would double-round):
     # numerator and denominator both exact, so the division rounds correctly
     if F === Float64 && s <= 22 && -9007199254740992 <= u <= 9007199254740992
         return Float64(Int64(u)) / @inbounds(_FPOW10[s + 1])
+    end
+    iszero(u) && return zero(F)
+    if 0 <= s <= 110
+        v, ok = _tofloatdiv(F, _tomag256(u), s, u < zero(u))
+        ok && return v
     end
     return _tofloat_slow(F, u, s)
 end

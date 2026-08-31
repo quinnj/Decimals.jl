@@ -121,44 +121,62 @@ Base.:(<)(x::AbstractFloat, y::AbstractDecimal) = _cmpfloat(y, x) == 1
 # x == num * 2^pow / den. Base's generic Real hash requires num/den in lowest
 # terms apart from powers of two (it strips those itself), so we strip the
 # common factors of five: u/(2^S*5^S) -> (u/5^r) / (2^S*5^(S-r)).
-@inline _divrem5(u::Union{Int32, Int64}) = divrem(u, 5)
-@inline function _divrem5(u::Int128)
-    # avoid __udivti3: m ÷ 5 == 2*(m ÷ 10) + (m%10 >= 5), via one magic divide
-    m = _mag(u)
-    q = _divpow10(m, 1) << 1
-    r = m - q * UInt128(5)
-    if r >= UInt128(5)
-        q += one(UInt128)
-        r -= UInt128(5)
+# greedy chunked extraction of min(v5(u), s) factors of five: hardware
+# divides while the magnitude fits a limb, reciprocal wide divides otherwise —
+# trailing-zero-heavy values never pay one wide division per factor
+@inline function _strip5u64(m::UInt64, left::Int)
+    for k in (27, 13, 6, 3, 1)
+        while left >= k
+            d = UInt64(5)^k
+            q, r = divrem(m, d)
+            r == zero(UInt64) || break
+            m = q
+            left -= k
+        end
     end
-    sq = q % Int128
-    return (u < 0 ? -sq : sq, u < 0 ? -(r % Int64) : r % Int64)
-end
-@inline function _divrem5(u::Int256)
-    m = _mag(u)
-    q, r = _divrem_by1(m, UInt64(5))
-    sq = q % Int256
-    return (u < 0 ? -sq : sq, u < 0 ? -(r % Int64) : (r % Int64))
+    return (m, left)
 end
 
 function _strip5s(u::T, s::Int) where {T <: StorageInt}
-    u == zero(T) && return (u, 0)
-    while s > 0
-        q, r = _divrem5(u)
-        iszero(r) || break
-        u = q
-        s -= 1
+    (u == zero(T) || s == 0) && return (u, s == 0 ? s : 0)
+    mw = _tomag256(u)
+    left = s
+    if mw > UInt256(typemax(UInt64))
+        for k in (27, 13, 6, 3, 1)
+            while left >= k
+                q, r = _divrem_by1(mw, UInt64(5)^k)
+                r == zero(UInt256) || break
+                mw = q
+                left -= k
+            end
+            mw <= UInt256(typemax(UInt64)) && break
+        end
     end
-    return (u, s)
+    if mw <= UInt256(typemax(UInt64)) && left > 0
+        m64, left = _strip5u64(mw % UInt64, left)
+        mw = UInt256(m64)
+    end
+    v = (mw % _utype(T)) % T
+    return (u < zero(T) ? -v : v, left)
 end
 
 function Base.decompose(x::Decimal{P, S, T}) where {P, S, T <: StorageInt}
     u, s = _strip5s(x.unscaled, S)
-    return (u, -S, _upow5_256(s) % Int256)  # 5^76 < typemax(Int256)
+    # the branch on the type parameter folds, so each instantiation returns a
+    # concrete machine-integer denominator
+    if S <= 27
+        return (u, -S, Int64(5)^s)
+    elseif S <= 55
+        return (u, -S, Int128(5)^s)
+    else
+        return (u, -S, _upow5_256(s) % Int256)
+    end
 end
 
 function Base.decompose(x::DecimalValue)
     u, s = _strip5s(x.unscaled, scale(x))
+    s <= 27 && return (u, -scale(x), Int64(5)^s)
+    s <= 55 && return (u, -scale(x), Int128(5)^s)
     s <= 109 && return (u, -scale(x), _upow5_256(s) % Int256)
     return (_tobigsigned(u), -scale(x), big(5)^s)
 end

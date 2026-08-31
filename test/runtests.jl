@@ -6,5 +6,6 @@ using Test
     include("arithmetic.jl")
     include("format.jl")
     include("broadcast.jl")
+    include("floatconv.jl")
     include("parsers.jl")
 end

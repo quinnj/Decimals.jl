@@ -56,3 +56,30 @@ using Test, Random
     @test (Decimal64{2}[] .+ Decimal64{2}[]) == Decimal64{2}[]
     @test ([a[1]] .* [b[1]])[1] === a[1] * b[1]
 end
+
+@testset "mixed-scale and wide broadcast kernels" begin
+    rng = Xoshiro(6002)
+    n = 5_000
+    a = [reinterpret(Decimal64{2}, rand(rng, -10^14:10^14)) for _ in 1:n]
+    bmix = [reinterpret(Decimal{18,4,Int64}, rand(rng, -10^14:10^14)) for _ in 1:n]
+    c = a .+ bmix
+    d = a .- bmix
+    for i in 1:n
+        @test c[i] === a[i] + bmix[i]
+        @test d[i] === a[i] - bmix[i]
+    end
+    # genuine overflow of the promoted type throws like the scalar path
+    amax = fill(typemax(Decimal64{2}), 8)
+    bmax = fill(typemax(Decimal{18,3,Int64}), 8)
+    @test_throws OverflowError amax .+ bmax
+    # Int128-tier product kernel (exact, unchecked by construction)
+    a128 = [reinterpret(Decimal{38,9,Int128}, Int128(rand(rng, -10^18:10^18))) for _ in 1:n]
+    b128 = [reinterpret(Decimal{38,4,Int128}, Int128(rand(rng, -10^18:10^18))) for _ in 1:n]
+    m = a128 .* b128
+    @test typeof(m) === Vector{Decimal{76,13,Int256}}
+    for i in 1:n
+        @test m[i] === a128[i] * b128[i]
+    end
+    mmax = fill(typemax(Decimal{38,0,Int128}), 8) .* fill(typemax(Decimal{38,0,Int128}), 8)
+    @test mmax[1] === typemax(Decimal{38,0,Int128}) * typemax(Decimal{38,0,Int128})
+end

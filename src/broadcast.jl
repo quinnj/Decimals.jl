@@ -39,26 +39,80 @@ for (op, subval) in ((:+, false), (:-, true))
     end
 end
 
-# narrow-tier product: the exact result always fits the promoted type
-# (P1 + P2 <= 36 digits in Int128), so no checks at all — pure widening SIMD
+# elementwise product: the exact result always fits the promoted type
+# (P1 + P2 <= 76 digits, which every storage pairing up to Int128 x Int128
+# holds in Int256), so no checks at all — widening SIMD for narrow tiers, a
+# sign-magnitude 256-bit widening loop for the Int128 tier
 function _bcmul(a::Vector{Decimal{P1, S1, T1}},
-                b::Vector{Decimal{P2, S2, T2}}) where {P1, S1, T1 <: Union{Int32, Int64},
-                                                       P2, S2, T2 <: Union{Int32, Int64}}
+                b::Vector{Decimal{P2, S2, T2}}) where {P1, S1, T1 <: Union{Int32, Int64, Int128},
+                                                       P2, S2, T2 <: Union{Int32, Int64, Int128}}
     RT = _multype(Decimal{P1, S1, T1}, Decimal{P2, S2, T2})
     T = _storage(RT)
     n = length(a)
     dest = Vector{RT}(undef, n)
-    @inbounds @simd for i in 1:n
-        dest[i] = reinterpret(RT, widemul(a[i].unscaled, b[i].unscaled) % T)
+    if sizeof(T1) <= 8 && sizeof(T2) <= 8
+        @inbounds @simd for i in 1:n
+            dest[i] = reinterpret(RT, widemul(a[i].unscaled, b[i].unscaled) % T)
+        end
+    else
+        @inbounds for i in 1:n
+            x = a[i].unscaled
+            y = b[i].unscaled
+            m = _widemul256(UInt128(_mag(x)), UInt128(_mag(y)))
+            u = (m % _utype(T)) % T
+            dest[i] = reinterpret(RT, ((x < zero(x)) ⊻ (y < zero(y))) ? -u : u)
+        end
     end
     return dest
 end
 
 function Base.copy(bc::Broadcasted{DefaultArrayStyle{1}, <:Any, typeof(*),
-                   Tuple{Vector{Decimal{P1, S1, T1}}, Vector{Decimal{P2, S2, T2}}}}) where {P1, S1, T1 <: Union{Int32, Int64},
-                                                                                            P2, S2, T2 <: Union{Int32, Int64}}
+                   Tuple{Vector{Decimal{P1, S1, T1}}, Vector{Decimal{P2, S2, T2}}}}) where {P1, S1, T1 <: Union{Int32, Int64, Int128},
+                                                                                            P2, S2, T2 <: Union{Int32, Int64, Int128}}
     a, b = bc.args
     length(a) == length(b) ||
         return invoke(Base.copy, Tuple{Broadcasted}, bc)
     return _bcmul(a, b)
+end
+
+# mixed-scale, same-storage add/sub: align by a compile-time constant power
+# of ten with a vectorizable bound mask, then the checked-add pattern
+function _bcaddsubmix(a::Vector{Decimal{P1, S1, T}}, b::Vector{Decimal{P2, S2, T}},
+                      ::Val{sub}) where {P1, S1, P2, S2, T <: StorageInt, sub}
+    RT = promote_type(Decimal{P1, S1, T}, Decimal{P2, S2, T})
+    TR = _storage(RT)
+    S = scale(RT)
+    da = S - S1
+    db = S - S2
+    pa = _upow10(_utype(TR), da) % TR
+    pb = _upow10(_utype(TR), db) % TR
+    la = da == 0 ? typemax(TR) : typemax(TR) ÷ pa
+    lb = db == 0 ? typemax(TR) : typemax(TR) ÷ pb
+    mm = _maxmag(RT) % TR
+    n = length(a)
+    dest = Vector{RT}(undef, n)
+    bad = false
+    @inbounds @simd for i in 1:n
+        xa = TR(a[i].unscaled)
+        xb = TR(b[i].unscaled)
+        bad |= (xa > la) | (xa < -la) | (xb > lb) | (xb < -lb)
+        x = xa * pa
+        y = xb * pb
+        r = sub ? x - y : x + y
+        ovf = sub ? ((x ⊻ y) & (x ⊻ r)) < zero(TR) : ((x ⊻ r) & (y ⊻ r)) < zero(TR)
+        bad |= ovf | (r > mm) | (r < -mm)
+        dest[i] = reinterpret(RT, r)
+    end
+    bad && _throwbcoverflow(sub ? :- : :+)
+    return dest
+end
+
+for (op, subval) in ((:+, false), (:-, true))
+    @eval function Base.copy(bc::Broadcasted{DefaultArrayStyle{1}, <:Any, typeof($op),
+                             Tuple{Vector{Decimal{P1, S1, T}}, Vector{Decimal{P2, S2, T}}}}) where {P1, S1, P2, S2, T <: StorageInt}
+        a, b = bc.args
+        length(a) == length(b) ||
+            return invoke(Base.copy, Tuple{Broadcasted}, bc)
+        return _bcaddsubmix(a, b, Val($subval))
+    end
 end
