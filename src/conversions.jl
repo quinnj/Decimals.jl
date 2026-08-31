@@ -182,10 +182,29 @@ function _torescaled(::Type{Decimal{P, S, T}}, u::Integer, s::Int, mode,
 end
 
 # non-throwing fit of ±mag*10^-sc (with optional sticky tail) into a target
-# type, for parser integrations: returns (value, ok) with ok=false on overflow
+# type, for parser integrations: returns (value, ok) with ok=false on overflow.
+# Magnitudes that fit the target's own width run entirely at that width — the
+# common money-string case never touches 256-bit arithmetic.
+@inline function _fitnarrow(::Type{Decimal{P, S, T}}, m::U, sc::Int, neg::Bool,
+                            mode::RoundingMode) where {P, S, T <: StorageInt, U <: Unsigned}
+    if sc > S
+        q, _ = _scaledown(m, sc - S, neg, mode)
+    else
+        q, ovf = _scaleup(m, S - sc)
+        ovf && return (zero(Decimal{P, S, T}), false)
+    end
+    q > _maxmag(Decimal{P, S, T}) && return (zero(Decimal{P, S, T}), false)
+    u = (q % _utype(T)) % T
+    return (reinterpret(Decimal{P, S, T}, neg ? -u : u), true)
+end
+
 @inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt256, sc::Int,
                              neg::Bool, sticky::Bool,
                              mode::RoundingMode) where {P, S, T <: StorageInt}
+    U = _utype(T)
+    if !sticky && mag <= UInt256(typemax(U))
+        return _fitnarrow(Decimal{P, S, T}, (mag % U), sc, neg, mode)
+    end
     if sc > S
         q, _ = _scaledown(mag, sc - S, neg, mode, sticky)
     else
@@ -199,6 +218,30 @@ end
     q > UInt256(_maxmag(Decimal{P, S, T})) && return (zero(Decimal{P, S, T}), false)
     u = (q % _utype(T)) % T
     return (reinterpret(Decimal{P, S, T}, neg ? -u : u), true)
+end
+
+# UInt64/UInt128-magnitude entries: the parser fast paths land here directly.
+# Targets at or below the magnitude's width fit at that width (bounds checked
+# against maxmag); wider targets convert up so scale-up has the full target
+# width to work in.
+@inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt64, sc::Int,
+                             neg::Bool, sticky::Bool,
+                             mode::RoundingMode) where {P, S, T <: StorageInt}
+    sticky && return _fitdecimal(Decimal{P, S, T}, UInt256(mag), sc, neg, sticky, mode)
+    if sizeof(T) <= 8
+        return _fitnarrow(Decimal{P, S, T}, mag, sc, neg, mode)
+    end
+    return _fitnarrow(Decimal{P, S, T}, _utype(T)(mag), sc, neg, mode)
+end
+
+@inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt128, sc::Int,
+                             neg::Bool, sticky::Bool,
+                             mode::RoundingMode) where {P, S, T <: StorageInt}
+    sticky && return _fitdecimal(Decimal{P, S, T}, UInt256(mag), sc, neg, sticky, mode)
+    if sizeof(T) <= 16
+        return _fitnarrow(Decimal{P, S, T}, mag, sc, neg, mode)
+    end
+    return _fitnarrow(Decimal{P, S, T}, _utype(T)(mag), sc, neg, mode)
 end
 
 @inline function _fitvalue(::Type{DecimalValue{T}}, mag::UInt256, sc::Int,

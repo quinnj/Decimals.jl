@@ -160,7 +160,11 @@ _sumtype(::Type{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}} =
 _sumtype(::Type{Decimal{P, S, T}}) where {P, S, T <: Union{Int128, Int256}} =
     Decimal{P, S, T}
 
-@inline _sumwiden(x::Decimal) = convert(_sumtype(typeof(x)), x)
+# widening a narrow tier to Decimal{38,S,Int128} is a pure sign-extension of
+# the unscaled value (same scale, invariant preserved) — no checks needed
+@inline _sumwiden(x::Decimal{P, S, T}) where {P, S, T <: Union{Int32, Int64}} =
+    reinterpret(Decimal{38, S, Int128}, Int128(x.unscaled))
+@inline _sumwiden(x::Decimal{P, S, T}) where {P, S, T <: Union{Int128, Int256}} = x
 
 Base.add_sum(x::Decimal, y::Decimal) = _sumwiden(x) + _sumwiden(y)
 Base.reduce_first(::typeof(Base.add_sum), x::Decimal) = _sumwiden(x)
