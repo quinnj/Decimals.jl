@@ -278,8 +278,12 @@ DecimalValue(x::Integer) = DecimalValue{Int64}(x)
 Base.round(::Type{DT}, x::Real,
            mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
 # disambiguate against Base round(::Type, ::Rational[, mode])
-Base.round(::Type{DT}, x::Rational,
-           mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
+Base.round(::Type{DT}, x::Rational{I},
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal, I} =
+    _round(DT, x, mode)
+Base.round(::Type{DT}, x::Rational{Bool},
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal} =
+    _round(DT, x, mode)
 
 # fill in the storage type when the target is written Decimal{P,S}
 _round(::Type{Decimal{P, S}}, x, mode::RoundingMode) where {P, S} =

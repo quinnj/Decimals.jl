@@ -75,6 +75,7 @@ end
     @test_throws InexactError Decimal{9,2}(1//3)
     @test round(Decimal{9,2}, 1//3) === Decimal{9,2}("0.33")
     @test round(Decimal{9,2}, 2//3, RoundUp) === Decimal{9,2}("0.67")
+    @test round(Decimal{9,2}, Rational{Bool}(true, true)) === Decimal{9,2}(1)
     @test Rational(Decimal{18,2}("1.25")) === 5//4
     @test Rational{Int32}(Decimal{18,2}("1.25")) === Int32(5)//Int32(4)
     @test Rational{Int8}(Decimal{18,18}("0.1")) === Int8(1)//Int8(10)
