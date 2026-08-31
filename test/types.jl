@@ -296,6 +296,9 @@ end
     @test promote_type(DecimalValue{Int32}, UInt32) === DecimalValue{Int64}
     @test promote_type(DecimalValue{Int128}, UInt128) === DecimalValue{Int256}
     @test promote_type(DecimalValue{Int256}, UInt256) === DecimalValue{Int256}
+    @test promote_type(Decimal64{2}, UInt256) === Decimal256{2}
+    @test Decimal64{2}("1.25") + UInt256(1) === Decimal256{2}("2.25")
+    @test UInt256(1) + Decimal64{2}("1.25") === Decimal256{2}("2.25")
     @test DecimalValue{Int128}(1, 2) + UInt128(1) === DecimalValue{Int256}(101, 2)
     @test UInt128(1) + DecimalValue{Int128}(1, 2) === DecimalValue{Int256}(101, 2)
 end

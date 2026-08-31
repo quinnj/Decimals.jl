@@ -460,7 +460,7 @@ _intdigits(::Type{UInt256}) = 78
 end
 
 @generated function Base.promote_rule(::Type{Decimal{P, S, T}},
-                                      ::Type{I}) where {P, S, T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256}}
+                                      ::Type{I}) where {P, S, T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256, UInt256}}
     P2 = min(max(P - S, _intdigits(I)) + S, 76)
     return :(Decimal{$P2, $S, $(_storagetype(P2))})
 end
