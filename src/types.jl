@@ -127,6 +127,13 @@ Base.eps(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
 Base.eps(x::Decimal) = eps(typeof(x))
 Base.eps(x::DecimalValue{T}) where {T <: StorageInt} = DecimalValue{T}(one(T), x.scale)
 
+function Base.floatmin(::Type{D}) where {D <: Decimal}
+    return eps(D)
+end
+function Base.floatmax(::Type{D}) where {D <: Decimal}
+    return typemax(D)
+end
+
 Base.widen(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
     Decimal{_capacity(_widen(T)), S, _widen(T)}
 Base.widen(::Type{DecimalValue{T}}) where {T <: StorageInt} = DecimalValue{_widen(T)}

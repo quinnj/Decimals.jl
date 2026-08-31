@@ -45,6 +45,8 @@ _randdec(rng, ::Type{Decimal{P, S, T}}) where {P, S, T} =
     @test string(typemax(Decimal{9,2,Int32})) == "9999999.99"
     @test typemin(Decimal64{2}) == -typemax(Decimal64{2})
     @test eps(Decimal64{2}) == Decimal{18,2}("0.01")
+    @test floatmin(Decimal64{2}) === eps(Decimal64{2})
+    @test floatmax(Decimal64{2}) === typemax(Decimal64{2})
     @test widen(Decimal64{2}) === Decimal{38,2,Int128}
     @test widen(Decimal{38,2,Int128}) === Decimal{76,2,Int256}
     @test widen(Decimal256{2}) === Decimal256{2}
