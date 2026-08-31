@@ -155,10 +155,15 @@ Base.:*(y::BigInt, x::DecimalValue) = x * y
 
 # ---- rounding to integer values within the type ----
 
+@inline function _roundshift(s::Int, digits::Integer)
+    digits < s - typemax(Int) && return typemax(Int)
+    return s - Int(digits)
+end
+
 function Base.round(x::Decimal{P, S, T}, mode::RoundingMode=RoundNearest;
                     digits::Integer=0) where {P, S, T <: StorageInt}
     digits >= S && return x
-    k = S - Int(digits)
+    k = _roundshift(S, digits)
     neg = _isneg(x)
     q, _ = _scaledown(_mag(x), k, neg, mode)
     mag, ovf = _scaleup(q, k)
@@ -174,7 +179,7 @@ Base.ceil(x::Decimal; digits::Integer=0) = round(x, RoundUp; digits)
 function Base.round(x::DecimalValue{T}, mode::RoundingMode=RoundNearest;
                     digits::Integer=0) where {T <: StorageInt}
     digits >= scale(x) && return x
-    k = scale(x) - Int(digits)
+    k = _roundshift(scale(x), digits)
     neg = _isneg(x)
     q, _ = _scaledown(_tomag256(x.unscaled), k, neg, mode)
     mag, ovf = _scaleup(q, k)

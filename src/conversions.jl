@@ -314,18 +314,21 @@ rescale(::Type{DT}, x::AbstractDecimal,
 
 function rescale(x::DecimalValue{T}, s::Integer,
                  mode::RoundingMode=RoundNearest) where {T <: StorageInt}
-    s == scale(x) && return x
+    0 <= s <= 16383 ||
+        throw(ArgumentError("DecimalValue scale must be in 0:16383, got $s"))
+    target = Int(s)
+    target == scale(x) && return x
     neg = _isneg(x)
     m = _tomag256(x.unscaled)
-    if s > scale(x)
-        mag, ovf = _scaleup(m, Int(s) - scale(x))
+    if target > scale(x)
+        mag, ovf = _scaleup(m, target - scale(x))
         ovf && _throwoverflow(DecimalValue{T}, x)
     else
-        mag, _ = _scaledown(m, scale(x) - Int(s), neg, mode)
+        mag, _ = _scaledown(m, scale(x) - target, neg, mode)
     end
     !_fitsigned(mag, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (mag % _utype(T)) % T
-    return DecimalValue{T}(neg ? -u : u, s)
+    return DecimalValue{T}(neg ? -u : u, target)
 end
 
 # ---- Decimal -> Integer ----

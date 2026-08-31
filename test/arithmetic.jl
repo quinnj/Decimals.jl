@@ -114,6 +114,10 @@ end
     @test ceil(DecimalValue{Int64}(201, 2)) === DecimalValue{Int64}(300, 2)
     @test round(DecimalValue{Int64}(1499, 2); digits=-1) === DecimalValue{Int64}(1000, 2)
     @test_throws OverflowError round(DecimalValue{Int32}(typemax(Int32), 1))
+    @test round(d("1.25"); digits=typemin(Int)) === zero(Decimal64{2})
+    @test round(v; digits=typemin(Int)) === DecimalValue{Int64}(0, 2)
+    @test_throws OverflowError round(d("1.25"), RoundUp; digits=typemin(Int))
+    @test_throws OverflowError round(v, RoundFromZero; digits=big(typemin(Int)) - 1)
     for _ in 1:500
         a = _randdec(rng, Decimal{38,9,Int128}, 12)
         dg = rand(rng, 0:9)
