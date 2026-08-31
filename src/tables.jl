@@ -93,6 +93,15 @@ _halfmax(::Type{UInt64}) = HALFMAX_64
 _halfmax(::Type{UInt128}) = HALFMAX_128
 _halfmax(::Type{UInt256}) = HALFMAX_256
 
+# powers of five as UInt256, for float<->decimal exact paths and decompose;
+# 5^110 is the largest fitting 256 bits
+const POW5_256 = UInt256[_fromfullbig(UInt256, big(5)^k) for k in 0:110]
+
+@inline function _upow5_256(k::Int)
+    @boundscheck 0 <= k <= 110 || throw(BoundsError(POW5_256, k + 1))
+    return @inbounds POW5_256[k + 1]
+end
+
 # decimal digit count: bits-based estimate (1233/4096 ≈ log10(2), slightly under)
 # then one table compare to correct
 @inline function _ndigits10(x::U) where {U <: Unsigned}

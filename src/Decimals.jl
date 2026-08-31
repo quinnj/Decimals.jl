@@ -3,7 +3,7 @@ module Decimals
 using BitIntegers: BitIntegers, Int256, UInt256
 
 export Decimal, DecimalValue, Decimal32, Decimal64, Decimal128, Decimal256,
-       rescale
+       rescale, divide
 
 include("tables.jl")
 include("limbs.jl")
@@ -13,6 +13,7 @@ include("knuth.jl")
 include("types.jl")
 include("conversions.jl")
 include("compare.jl")
+include("arithmetic.jl")
 include("show.jl")
 
 @static if VERSION >= v"1.11"
