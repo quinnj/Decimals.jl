@@ -9,8 +9,9 @@
 @inline function _divround(n::UInt256, d::UInt256, neg::Bool, mode::RoundingMode)
     q, r = _divrem_wide(n, d)
     r == zero(UInt256) && return (q, false)
-    t = r << 1  # r < d <= 2^255, no overflow
-    inc = _roundinc(t < d, t == d, (q & one(UInt256)) != zero(UInt256), neg, mode)
+    complement = d - r
+    inc = _roundinc(r < complement, r == complement,
+                    (q & one(UInt256)) != zero(UInt256), neg, mode)
     return (inc ? q + one(UInt256) : q, true)
 end
 
@@ -73,8 +74,8 @@ end
 
 @noinline function _fromrational_big(::Type{Decimal{P, S, T}}, x::Rational,
                                      mode) where {P, S, T <: StorageInt}
-    num = _tobig(_tomag256(x.num)) * big(10)^S
-    den = _tobig(_tomag256(x.den))
+    num = abs(_tobigsigned(x.num)) * big(10)^S
+    den = abs(_tobigsigned(x.den))
     q, r = divrem(num, den)
     if r != 0
         mode === nothing && _throwinexact(Decimal{P, S, T}, x)
@@ -104,6 +105,7 @@ function _fromfloat(::Type{Decimal{P, S, T}}, x::AbstractFloat,
     isfinite(x) || _throwinexact(Decimal{P, S, T}, x)
     iszero(x) && return zero(Decimal{P, S, T})
     num, pow, den = Base.decompose(x)  # x == num * 2^pow / den, den == ±1
+    num isa BigInt && return _fromfloat_big(Decimal{P, S, T}, x, mode)
     neg = (num < 0) ⊻ (den < 0)
     m = _tomag256(abs(num))
     if pow >= 0
@@ -139,7 +141,7 @@ end
     neg = (num < 0) ⊻ (den < 0)
     m = big(abs(num))
     if pow >= 0
-        mag = m << pow * big(10)^S
+        mag = (m << pow) * big(10)^S
     else
         k = -pow
         if k <= S
@@ -170,6 +172,11 @@ function _torescaled(::Type{Decimal{P, S, T}}, u::Integer, s::Int, mode,
                      x) where {P, S, T <: StorageInt}
     neg = u < zero(u)
     m = _tomag256(u)
+    return _torescaled(Decimal{P, S, T}, m, neg, s, mode, x)
+end
+
+function _torescaled(::Type{Decimal{P, S, T}}, m::UInt256, neg::Bool, s::Int,
+                     mode, x) where {P, S, T <: StorageInt}
     if s <= S
         mag, ovf = _scaleup(m, S - s)
         ovf && _throwoverflow(Decimal{P, S, T}, x)
@@ -253,7 +260,7 @@ end
         sc = 0
     end
     sc > 16383 && return (zero(DecimalValue{T}), false)
-    mag > _tomag256(typemax(T)) && return (zero(DecimalValue{T}), false)
+    _fitsigned(mag, neg, T) || return (zero(DecimalValue{T}), false)
     u = (mag % _utype(T)) % T
     return (DecimalValue{T}(neg ? -u : u, sc), true)
 end
@@ -302,9 +309,10 @@ function DecimalValue{T}(x::Rational) where {T <: StorageInt}
         hi == zero(UInt256) || _throwoverflow(DecimalValue{T}, x)
         n = lo
     end
-    n > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, x)
+    neg = x.num < zero(x.num)
+    !_fitsigned(n, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (n % _utype(T)) % T
-    return DecimalValue{T}(x.num < zero(x.num) ? -u : u, s)
+    return DecimalValue{T}(neg ? -u : u, s)
 end
 
 function DecimalValue{T}(x::AbstractFloat) where {T <: StorageInt}
@@ -331,7 +339,7 @@ function DecimalValue{T}(x::AbstractFloat) where {T <: StorageInt}
         m = lo
         s = k
     end
-    m > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, x)
+    !_fitsigned(m, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (m % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, s)
 end
@@ -347,8 +355,12 @@ DecimalValue(x::Integer) = DecimalValue{Int64}(x)
 Base.round(::Type{DT}, x::Real,
            mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
 # disambiguate against Base round(::Type, ::Rational[, mode])
-Base.round(::Type{DT}, x::Rational,
-           mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
+Base.round(::Type{DT}, x::Rational{I},
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal, I} =
+    _round(DT, x, mode)
+Base.round(::Type{DT}, x::Rational{Bool},
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal} =
+    _round(DT, x, mode)
 
 # fill in the storage type when the target is written Decimal{P,S}
 _round(::Type{Decimal{P, S}}, x, mode::RoundingMode) where {P, S} =
@@ -379,18 +391,21 @@ rescale(::Type{DT}, x::AbstractDecimal,
 
 function rescale(x::DecimalValue{T}, s::Integer,
                  mode::RoundingMode=RoundNearest) where {T <: StorageInt}
-    s == scale(x) && return x
+    0 <= s <= 16383 ||
+        throw(ArgumentError("DecimalValue scale must be in 0:16383, got $s"))
+    target = Int(s)
+    target == scale(x) && return x
     neg = _isneg(x)
     m = _tomag256(x.unscaled)
-    if s > scale(x)
-        mag, ovf = _scaleup(m, Int(s) - scale(x))
+    if target > scale(x)
+        mag, ovf = _scaleup(m, target - scale(x))
         ovf && _throwoverflow(DecimalValue{T}, x)
     else
-        mag, _ = _scaledown(m, scale(x) - Int(s), neg, mode)
+        mag, _ = _scaledown(m, scale(x) - target, neg, mode)
     end
-    mag > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, x)
+    !_fitsigned(mag, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (mag % _utype(T)) % T
-    return DecimalValue{T}(neg ? -u : u, s)
+    return DecimalValue{T}(neg ? -u : u, target)
 end
 
 # ---- Decimal -> Integer ----
@@ -420,13 +435,13 @@ Base.ceil(::Type{I}, x::AbstractDecimal) where {I <: Integer} =
 # ---- Decimal -> Rational ----
 
 function Base.Rational{I}(x::AbstractDecimal) where {I <: Integer}
-    s = scale(x)
-    den = s <= _tablemax(UInt128) ? convert(I, _upow10(UInt128, s)) :
-          convert(I, _tobig(_upow10(UInt256, min(s, _tablemax(UInt256)))))
-    return convert(I, x.unscaled) // den
+    num = _tobigsigned(x.unscaled)
+    den = big(10)^scale(x)
+    factor = gcd(abs(num), den)
+    return convert(I, div(num, factor)) // convert(I, div(den, factor))
 end
 Base.Rational(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = Rational{T}(x)
-Base.Rational(x::DecimalValue{T}) where {T <: StorageInt} = Rational{T}(x)
+Base.Rational(x::DecimalValue) = Rational{BigInt}(x)
 
 # ---- Decimal -> AbstractFloat ----
 
@@ -443,12 +458,50 @@ function _tofloat(::Type{F}, u::Integer, s::Int) where {F <: AbstractFloat}
 end
 
 @noinline function _tofloat_slow(::Type{F}, u::Integer, s::Int) where {F}
-    num = BigFloat(_tobigsigned(u); precision=max(8 * sizeof(u), 8))
-    den = BigFloat(big(10)^s; precision=max(64, 4 * s))
-    q = BigFloat(; precision=precision(F) isa Int ? precision(F) : 53)
+    iszero(u) && return zero(F)
+    num = abs(_tobigsigned(u))
+    den = big(10)^s
+    nbits = ndigits(num, base=2)
+    dbits = ndigits(den, base=2)
+    e = nbits - dbits
+    if e >= 0
+        num < den << e && (e -= 1)
+    else
+        num << -e < den && (e -= 1)
+    end
+    p = precision(F)
+    emin = exponent(floatmin(F))
+    emax = exponent(floatmax(F))
+    e > emax && return u < zero(u) ? -F(Inf) : F(Inf)
+    shift = max(e, emin) - (p - 1)
+    if shift >= 0
+        q, r = divrem(num, den << shift)
+        divisor = den << shift
+    else
+        q, r = divrem(num << -shift, den)
+        divisor = den
+    end
+    complement = divisor - r
+    (r > complement || (r == complement && isodd(q))) && (q += 1)
+    value = ldexp(F(q), shift)
+    return u < zero(u) ? -value : value
+end
+
+function Base.BigFloat(
+        x::AbstractDecimal,
+        mode::Base.MPFR.MPFRRoundingMode=Base.MPFR.rounding_raw(BigFloat);
+        precision::Integer=Base.precision(BigFloat))
+    numbig = _tobigsigned(x.unscaled)
+    denbig = big(10)^scale(x)
+    numbits = max(ndigits(abs(numbig), base=2), 2)
+    denbits = max(ndigits(denbig, base=2), 2)
+    num = BigFloat(numbig; precision=numbits)
+    den = BigFloat(denbig; precision=denbits)
+    result = BigFloat(; precision)
     ccall((:mpfr_div, :libmpfr), Int32,
-          (Ref{BigFloat}, Ref{BigFloat}, Ref{BigFloat}, Int32), q, num, den, 0)
-    return F(q)
+          (Ref{BigFloat}, Ref{BigFloat}, Ref{BigFloat}, Int32),
+          result, num, den, mode)
+    return result
 end
 
 _tobigsigned(u::Integer) = big(u)
@@ -484,10 +537,12 @@ _intdigits(::Type{UInt256}) = 78
 end
 
 @generated function Base.promote_rule(::Type{Decimal{P, S, T}},
-                                      ::Type{I}) where {P, S, T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256}}
+                                      ::Type{I}) where {P, S, T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256, UInt256}}
     P2 = min(max(P - S, _intdigits(I)) + S, 76)
     return :(Decimal{$P2, $S, $(_storagetype(P2))})
 end
+Base.promote_rule(::Type{Decimal{P, S, T}}, ::Type{BigInt}) where {P, S, T <: StorageInt} =
+    Decimal{76, S, Int256}
 
 Base.promote_rule(::Type{<:AbstractDecimal}, ::Type{F}) where {F <: AbstractFloat} = F
 
@@ -500,6 +555,12 @@ Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{DecimalValue{T2}}) where {T1 
     DecimalValue{promote_type(T1, T2)}
 Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{Decimal{P, S, T}}) where {T1 <: StorageInt, P, S, T <: StorageInt} =
     DecimalValue{promote_type(T1, T)}
-Base.promote_rule(::Type{DecimalValue{T}},
-                  ::Type{I}) where {T, I <: Union{Bool, Base.BitInteger, Int256}} =
-    DecimalValue{promote_type(T, I)}
+@generated function Base.promote_rule(::Type{DecimalValue{T}},
+                                      ::Type{I}) where {T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256, UInt256}}
+    ibits = 8 * sizeof(I) + (I <: Unsigned)
+    bits = min(max(8 * sizeof(T), ibits), 256)
+    PT = bits <= 32 ? Int32 : bits <= 64 ? Int64 : bits <= 128 ? Int128 : Int256
+    return :(DecimalValue{$PT})
+end
+Base.promote_rule(::Type{DecimalValue{T}}, ::Type{BigInt}) where {T <: StorageInt} =
+    DecimalValue{Int256}

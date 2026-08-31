@@ -102,6 +102,116 @@ end
 
 Base.:/(x::Decimal, y::Decimal) = divide(x, y, RoundNearest)
 
+# ---- integer quotient and remainder ----
+
+@inline function _quotremround(n::UInt256, d::UInt256, xneg::Bool,
+                               qneg::Bool, mode::RoundingMode)
+    q, r = _divrem_wide(n, d)
+    r == zero(UInt256) && return (q, r, false)
+    complement = d - r
+    inc = _roundinc(r < complement, r == complement,
+                    isodd(q), qneg, mode)
+    return (inc ? q + one(UInt256) : q,
+            inc ? complement : r,
+            inc ? !xneg : xneg)
+end
+
+@inline function _decimalparts(x::D, y::D,
+                               mode::RoundingMode) where {D <: Decimal}
+    iszero(y) && throw(DivideError())
+    xneg = _isneg(x)
+    qneg = xneg ⊻ _isneg(y)
+    q, r, rneg = _quotremround(_tomag256(x.unscaled),
+                               _tomag256(y.unscaled), xneg, qneg, mode)
+    return q, qneg, r, rneg
+end
+
+@inline function _decimalquotient(::Type{D}, q::UInt256, qneg::Bool,
+                                  x, y) where {D <: Decimal}
+    qscaled, ovf = _scaleup(q, scale(D))
+    (ovf || qscaled > UInt256(_maxmag(D))) && _throwop(:div, x, y)
+    return _fromuval(D, qscaled, qneg, x)
+end
+
+@inline function _decimaldivrem(x::D, y::D,
+                                mode::RoundingMode) where {D <: Decimal}
+    q, qneg, r, rneg = _decimalparts(x, y, mode)
+    quotient = _decimalquotient(D, q, qneg, x, y)
+    return quotient, _fromuval(D, r, rneg, x)
+end
+
+@inline function _decimalremainder(x::D, y::D,
+                                   mode::RoundingMode) where {D <: Decimal}
+    _, _, r, rneg = _decimalparts(x, y, mode)
+    return _fromuval(D, r, rneg, x)
+end
+
+@inline function Base.div(x::D, y::D,
+                          mode::RoundingMode) where {D <: Decimal}
+    q, qneg, _, _ = _decimalparts(x, y, mode)
+    return _decimalquotient(D, q, qneg, x, y)
+end
+
+@inline function Base.fld(x::D, y::D) where {D <: Decimal}
+    return div(x, y, RoundDown)
+end
+@inline function Base.cld(x::D, y::D) where {D <: Decimal}
+    return div(x, y, RoundUp)
+end
+
+function Base.rem(x::D, y::D) where {D <: Decimal}
+    return _decimalremainder(x, y, RoundToZero)
+end
+
+for mode in (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
+             RoundToZero, RoundFromZero, RoundDown, RoundUp)
+    MT = typeof(mode)
+    @eval begin
+        @inline function Base.rem(x::D, y::D, ::$MT) where {D <: Decimal}
+            return _decimalremainder(x, y, $mode)
+        end
+        @inline function Base.divrem(x::D, y::D, ::$MT) where {D <: Decimal}
+            return _decimaldivrem(x, y, $mode)
+        end
+    end
+end
+
+function Base.rem(x::AbstractDecimal, y::AbstractDecimal)
+    return rem(promote(x, y)...)
+end
+function Base.rem(x::AbstractDecimal, y::Real)
+    return rem(promote(x, y)...)
+end
+function Base.rem(x::Real, y::AbstractDecimal)
+    return rem(promote(x, y)...)
+end
+
+for mode in (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
+             RoundToZero, RoundFromZero, RoundDown, RoundUp)
+    MT = typeof(mode)
+    @eval begin
+        function Base.rem(x::AbstractDecimal, y::AbstractDecimal, ::$MT)
+            return rem(promote(x, y)..., $mode)
+        end
+        function Base.rem(x::AbstractDecimal, y::Real, ::$MT)
+            return rem(promote(x, y)..., $mode)
+        end
+        function Base.rem(x::Real, y::AbstractDecimal, ::$MT)
+            return rem(promote(x, y)..., $mode)
+        end
+    end
+end
+
+function Base.mod(x::AbstractDecimal, y::AbstractDecimal)
+    return rem(x, y, RoundDown)
+end
+function Base.mod(x::AbstractDecimal, y::Real)
+    return rem(x, y, RoundDown)
+end
+function Base.mod(x::Real, y::AbstractDecimal)
+    return rem(x, y, RoundDown)
+end
+
 # scale-preserving multiply by a machine integer (multiplying by an integer
 # should not widen the scale the way promotion-based multiply would)
 const _MulInt = Union{Base.BitInteger, Int256, UInt256}
@@ -127,20 +237,43 @@ end
 end
 Base.:*(y::_MulInt, x::Decimal) = x * y
 
+function Base.:*(x::Decimal{P, S}, y::BigInt) where {P, S}
+    RT = Decimal{76, S, Int256}
+    product = _tobigsigned(x.unscaled) * y
+    abs(product) > _tobig(UInt256(_maxmag(RT))) && _throwop(:*, x, y)
+    return reinterpret(RT, convert(Int256, product))
+end
+Base.:*(y::BigInt, x::Decimal) = x * y
+
 function Base.:*(x::DecimalValue{T}, y::_MulInt) where {T <: StorageInt}
+    neg = _isneg(x) != (y < zero(y))
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y))
-    (hi != zero(UInt256) || lo > _tomag256(typemax(T))) && _throwvalop(:*)
+    (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
     return DecimalValue{T}((_isneg(x) ⊻ (y < zero(y))) ? -u : u, x.scale)
 end
 Base.:*(y::_MulInt, x::DecimalValue) = x * y
 
+function Base.:*(x::DecimalValue{T}, y::BigInt) where {T <: StorageInt}
+    product = _tobigsigned(x.unscaled) * y
+    lo = _tobigsigned(typemin(T))
+    hi = _tobigsigned(typemax(T))
+    (product < lo || product > hi) && _throwvalop(:*)
+    return DecimalValue{T}(convert(T, product), x.scale)
+end
+Base.:*(y::BigInt, x::DecimalValue) = x * y
+
 # ---- rounding to integer values within the type ----
+
+@inline function _roundshift(s::Int, digits::Integer)
+    digits < s - typemax(Int) && return typemax(Int)
+    return s - Int(digits)
+end
 
 function Base.round(x::Decimal{P, S, T}, mode::RoundingMode=RoundNearest;
                     digits::Integer=0) where {P, S, T <: StorageInt}
     digits >= S && return x
-    k = S - Int(digits)
+    k = _roundshift(S, digits)
     neg = _isneg(x)
     q, _ = _scaledown(_mag(x), k, neg, mode)
     mag, ovf = _scaleup(q, k)
@@ -152,6 +285,22 @@ end
 Base.trunc(x::Decimal; digits::Integer=0) = round(x, RoundToZero; digits)
 Base.floor(x::Decimal; digits::Integer=0) = round(x, RoundDown; digits)
 Base.ceil(x::Decimal; digits::Integer=0) = round(x, RoundUp; digits)
+
+function Base.round(x::DecimalValue{T}, mode::RoundingMode=RoundNearest;
+                    digits::Integer=0) where {T <: StorageInt}
+    digits >= scale(x) && return x
+    k = _roundshift(scale(x), digits)
+    neg = _isneg(x)
+    q, _ = _scaledown(_tomag256(x.unscaled), k, neg, mode)
+    mag, ovf = _scaleup(q, k)
+    (ovf || !_fitsigned(mag, neg, T)) && _throwvalop(:round)
+    u = (mag % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, x.scale)
+end
+
+Base.trunc(x::DecimalValue; digits::Integer=0) = round(x, RoundToZero; digits)
+Base.floor(x::DecimalValue; digits::Integer=0) = round(x, RoundDown; digits)
+Base.ceil(x::DecimalValue; digits::Integer=0) = round(x, RoundUp; digits)
 
 # ---- sum: accumulate in (at least) the Int128 tier ----
 
@@ -219,8 +368,9 @@ end
 function Base.:*(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt}
     s = scale(x) + scale(y)
     s <= 16383 || _throwvalop(:*)
+    neg = _isneg(x) != _isneg(y)
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y.unscaled))
-    (hi != zero(UInt256) || lo > _tomag256(typemax(T))) && _throwvalop(:*)
+    (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
     return DecimalValue{T}((_isneg(x) ⊻ _isneg(y)) ? -u : u, s)
 end
@@ -234,11 +384,130 @@ function divide(x::DecimalValue{T}, y::DecimalValue{T},
     n, ovf = _scaleup(_tomag256(x.unscaled), s - scale(x) + scale(y))
     ovf && _throwvalop(:/)
     q, _ = _divround(n, _tomag256(y.unscaled), neg, mode)
-    q > _tomag256(typemax(T)) && _throwvalop(:/)
+    !_fitsigned(q, neg, T) && _throwvalop(:/)
     u = (q % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, s)
 end
 divide(x::DecimalValue, y::DecimalValue, mode::RoundingMode=RoundNearest) =
     divide(promote(x, y)..., mode)
 
+@inline function _valueparts(x::DecimalValue{T}, y::DecimalValue{T},
+                             mode::RoundingMode) where {T <: StorageInt}
+    iszero(y) && throw(DivideError())
+    s = max(scale(x), scale(y))
+    xm, xovf = _scaleup(_tomag256(x.unscaled), s - scale(x))
+    ym, yovf = _scaleup(_tomag256(y.unscaled), s - scale(y))
+    (xovf || yovf) && return _valueparts_big(x, y, mode, s)
+    qneg = _isneg(x) ⊻ _isneg(y)
+    q, r, rneg = _quotremround(xm, ym, _isneg(x), qneg, mode)
+    return q, r, rneg, s
+end
+
+@noinline function _valueparts_big(x::DecimalValue, y::DecimalValue,
+                                   mode::RoundingMode, s::Int)
+    xm = abs(_tobigsigned(x.unscaled)) * big(10)^(s - scale(x))
+    ym = abs(_tobigsigned(y.unscaled)) * big(10)^(s - scale(y))
+    q, r = divrem(xm, ym)
+    if iszero(r)
+        return q, r, false, s
+    end
+    qneg = _isneg(x) ⊻ _isneg(y)
+    complement = ym - r
+    inc = _roundinc(r < complement, r == complement, isodd(q), qneg, mode)
+    return inc ? q + 1 : q, inc ? complement : r,
+           inc ? !_isneg(x) : _isneg(x), s
+end
+
+@inline function _valuefrommag(::Type{T}, mag::UInt256, neg::Bool,
+                               s::Int) where {T <: StorageInt}
+    !_fitsigned(mag, neg, T) && _throwvalop(:rem)
+    u = (mag % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, s)
+end
+
+@noinline function _valuefrommag(::Type{T}, mag::BigInt, neg::Bool,
+                                 s::Int) where {T <: StorageInt}
+    limit = neg ? -_tobigsigned(typemin(T)) : _tobigsigned(typemax(T))
+    mag > limit && _throwvalop(:rem)
+    u = convert(T, neg ? -mag : mag)
+    return DecimalValue{T}(u, s)
+end
+
+@inline function _valuequotient(::Type{T}, q::UInt256, neg::Bool,
+                                s::Int) where {T <: StorageInt}
+    mag, ovf = _scaleup(q, s)
+    (ovf || !_fitsigned(mag, neg, T)) && _throwvalop(:div)
+    u = (mag % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, s)
+end
+
+@noinline function _valuequotient(::Type{T}, q::BigInt, neg::Bool,
+                                  s::Int) where {T <: StorageInt}
+    iszero(q) && return DecimalValue{T}(0, s)
+    mag = q * big(10)^s
+    limit = neg ? -_tobigsigned(typemin(T)) : _tobigsigned(typemax(T))
+    mag > limit && _throwvalop(:div)
+    u = convert(T, neg ? -mag : mag)
+    return DecimalValue{T}(u, s)
+end
+
+@inline function _valuedivrem(x::DecimalValue{T}, y::DecimalValue{T},
+                              mode::RoundingMode) where {T <: StorageInt}
+    q, r, rneg, s = _valueparts(x, y, mode)
+    quotient = _valuequotient(T, q, _isneg(x) ⊻ _isneg(y), s)
+    remainder = _valuefrommag(T, r, rneg, s)
+    return quotient, remainder
+end
+
+@inline function _valueremainder(x::DecimalValue{T}, y::DecimalValue{T},
+                                 mode::RoundingMode) where {T <: StorageInt}
+    _, r, rneg, s = _valueparts(x, y, mode)
+    return _valuefrommag(T, r, rneg, s)
+end
+
+@inline function _valuequotient(x::DecimalValue{T}, y::DecimalValue{T},
+                                mode::RoundingMode) where {T <: StorageInt}
+    q, _, _, s = _valueparts(x, y, mode)
+    return _valuequotient(T, q, _isneg(x) ⊻ _isneg(y), s)
+end
+
+@inline function Base.div(x::DecimalValue{T}, y::DecimalValue{T},
+                          mode::RoundingMode) where {T <: StorageInt}
+    return _valuequotient(x, y, mode)
+end
+
+@inline function Base.fld(x::DecimalValue{T},
+                          y::DecimalValue{T}) where {T <: StorageInt}
+    return div(x, y, RoundDown)
+end
+@inline function Base.cld(x::DecimalValue{T},
+                          y::DecimalValue{T}) where {T <: StorageInt}
+    return div(x, y, RoundUp)
+end
+
+function Base.rem(x::DecimalValue{T},
+                  y::DecimalValue{T}) where {T <: StorageInt}
+    return _valueremainder(x, y, RoundToZero)
+end
+
+for mode in (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
+             RoundToZero, RoundFromZero, RoundDown, RoundUp)
+    MT = typeof(mode)
+    @eval begin
+        @inline function Base.rem(x::DecimalValue{T}, y::DecimalValue{T},
+                                  ::$MT) where {T <: StorageInt}
+            return _valueremainder(x, y, $mode)
+        end
+        @inline function Base.divrem(x::DecimalValue{T}, y::DecimalValue{T},
+                                     ::$MT) where {T <: StorageInt}
+            return _valuedivrem(x, y, $mode)
+        end
+    end
+end
+
 Base.:/(x::DecimalValue, y::DecimalValue) = divide(x, y, RoundNearest)
+
+divide(x::Decimal, y::DecimalValue, mode::RoundingMode=RoundNearest) =
+    divide(promote(x, y)..., mode)
+divide(x::DecimalValue, y::Decimal, mode::RoundingMode=RoundNearest) =
+    divide(promote(x, y)..., mode)

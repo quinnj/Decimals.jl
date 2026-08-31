@@ -1,16 +1,25 @@
-# Printing and (M1-simple) parsing. print/string give the plain decimal form;
-# show gives a round-trippable typed form. The fast SWAR parser and formatter
-# land with the Parsers.jl integration (M3); these are the correct simple
-# versions.
+# Printing and simple parsing. print/string give the plain decimal form; show
+# gives a round-trippable typed form. The fast byte-level parser lives in the
+# Parsers.jl extension; the core parser here is the correct simple version
+# with identical semantics.
 
 Base.print(io::IO, x::AbstractDecimal) = print(io, string(x))
+
+# wide storage types print qualified so typed show round-trips from a clean
+# `using Decimals` namespace
+function _printstoragetype(io::IO, ::Type{T}) where {T <: StorageInt}
+    print(io, T === Int256 ? "Decimals.Int256" : string(T))
+    return nothing
+end
 
 function Base.show(io::IO, x::Decimal{P, S, T}) where {P, S, T <: StorageInt}
     if get(io, :compact, false)::Bool
         print(io, string(x))
         return nothing
     end
-    print(io, "Decimal{", P, ",", S, ",", T, "}(\"", string(x), "\")")
+    print(io, "Decimal{", P, ",", S, ",")
+    _printstoragetype(io, T)
+    print(io, "}(\"", string(x), "\")")
     return nothing
 end
 
@@ -19,7 +28,9 @@ function Base.show(io::IO, x::DecimalValue{T}) where {T <: StorageInt}
         print(io, string(x))
         return nothing
     end
-    print(io, "DecimalValue{", T, "}(\"", string(x), "\")")
+    print(io, "DecimalValue{")
+    _printstoragetype(io, T)
+    print(io, "}(\"", string(x), "\")")
     return nothing
 end
 
@@ -29,17 +40,22 @@ end
 # 10^76 - 1 (77 retained significant digits; more become the sticky tail)
 const _ACCMAX = _upow10(UInt256, 76) - one(UInt256)
 
+# Base's ASCII numeric whitespace at input boundaries
+@inline function _isparsespace(c)
+    return c == UInt8(' ') || UInt8('\t') <= c <= UInt8('\r')
+end
+
 # parse ±digits[.digits][eE±digits] into (mag, sc, neg, sticky, ok):
 # value == ±(mag + sticky·ε) * 10^-sc, mag retaining 77 significant digits
 function _parsecore(s::AbstractString)
     b = codeunits(s)
     n = length(b)
     i = 1
-    while i <= n && (b[i] == UInt8(' ') || b[i] == UInt8('\t'))
+    while i <= n && _isparsespace(b[i])
         i += 1
     end
     j = n
-    while j >= i && (b[j] == UInt8(' ') || b[j] == UInt8('\t'))
+    while j >= i && _isparsespace(b[j])
         j -= 1
     end
     i > j && return (zero(UInt256), 0, false, false, false)
@@ -99,6 +115,10 @@ function _parsecore(s::AbstractString)
     return (mag, sc, neg, sticky, true)
 end
 
+# Parsing rounds (half-even) at the target scale, like parse(Float64, s) and
+# every other cross-representation parse in the ecosystem; exact-scale wire
+# values are unaffected. convert/constructors from other number types remain
+# exact-or-throw, and the Parsers.jl extension exposes rounding= for control.
 function Base.parse(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T <: StorageInt}
     mag, sc, neg, sticky, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
@@ -106,6 +126,9 @@ function Base.parse(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T 
     fit || _throwoverflow(Decimal{P, S, T}, s)
     return v
 end
+
+Base.parse(::Type{Decimal{P, S}}, s::AbstractString) where {P, S} =
+    parse(Decimal{P, S, _storagetype(P)}, s)
 
 function Base.parse(::Type{DecimalValue{T}}, s::AbstractString) where {T <: StorageInt}
     mag, sc, neg, sticky, ok = _parsecore(s)
@@ -119,8 +142,8 @@ function Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: Union{Decimal
     try
         return parse(DT, s)
     catch e
-        e isa InterruptException && rethrow()
-        return nothing
+        e isa Union{ArgumentError, InexactError, OverflowError} && return nothing
+        rethrow()
     end
 end
 
