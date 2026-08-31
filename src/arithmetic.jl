@@ -171,6 +171,22 @@ Base.trunc(x::Decimal; digits::Integer=0) = round(x, RoundToZero; digits)
 Base.floor(x::Decimal; digits::Integer=0) = round(x, RoundDown; digits)
 Base.ceil(x::Decimal; digits::Integer=0) = round(x, RoundUp; digits)
 
+function Base.round(x::DecimalValue{T}, mode::RoundingMode=RoundNearest;
+                    digits::Integer=0) where {T <: StorageInt}
+    digits >= scale(x) && return x
+    k = scale(x) - Int(digits)
+    neg = _isneg(x)
+    q, _ = _scaledown(_tomag256(x.unscaled), k, neg, mode)
+    mag, ovf = _scaleup(q, k)
+    (ovf || !_fitsigned(mag, neg, T)) && _throwvalop(:round)
+    u = (mag % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, x.scale)
+end
+
+Base.trunc(x::DecimalValue; digits::Integer=0) = round(x, RoundToZero; digits)
+Base.floor(x::DecimalValue; digits::Integer=0) = round(x, RoundDown; digits)
+Base.ceil(x::DecimalValue; digits::Integer=0) = round(x, RoundUp; digits)
+
 # ---- sum: accumulate in (at least) the Int128 tier ----
 
 _sumtype(::Type{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}} =
@@ -243,3 +259,8 @@ divide(x::DecimalValue, y::DecimalValue, mode::RoundingMode=RoundNearest) =
     divide(promote(x, y)..., mode)
 
 Base.:/(x::DecimalValue, y::DecimalValue) = divide(x, y, RoundNearest)
+
+divide(x::Decimal, y::DecimalValue, mode::RoundingMode=RoundNearest) =
+    divide(promote(x, y)..., mode)
+divide(x::DecimalValue, y::Decimal, mode::RoundingMode=RoundNearest) =
+    divide(promote(x, y)..., mode)

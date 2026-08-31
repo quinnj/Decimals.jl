@@ -107,6 +107,13 @@ end
     @test floor(d("-2.01")) === d("-3.00")
     @test ceil(d("2.01")) === d("3.00")
     @test round(d("1.23"), digits=5) === d("1.23")
+    v = DecimalValue{Int64}(255, 2)
+    @test round(v; digits=1) === DecimalValue{Int64}(260, 2)
+    @test trunc(DecimalValue{Int64}(-299, 2)) === DecimalValue{Int64}(-200, 2)
+    @test floor(DecimalValue{Int64}(-201, 2)) === DecimalValue{Int64}(-300, 2)
+    @test ceil(DecimalValue{Int64}(201, 2)) === DecimalValue{Int64}(300, 2)
+    @test round(DecimalValue{Int64}(1499, 2); digits=-1) === DecimalValue{Int64}(1000, 2)
+    @test_throws OverflowError round(DecimalValue{Int32}(typemax(Int32), 1))
     for _ in 1:500
         a = _randdec(rng, Decimal{38,9,Int128}, 12)
         dg = rand(rng, 0:9)
@@ -153,6 +160,8 @@ end
     @test a + big(2) === DecimalValue{Int256}(325, 2)
     @test a * big(2) === DecimalValue{Int64}(250, 2)
     @test_throws OverflowError a * big(10)^100
+    @test divide(d, DecimalValue{Int64}(50, 1)) === DecimalValue{Int64}(25, 2)
+    @test divide(DecimalValue{Int64}(50, 1), d) === DecimalValue{Int64}(400, 2)
 end
 
 @testset "DecimalValue arithmetic" begin
@@ -199,6 +208,9 @@ end
     rf(a); rf(c)
     @test @allocated(rf(a)) == 0
     @test @allocated(rf(c)) == 0
+    v = DecimalValue{Int64}(12345, 3)
+    rf(v)
+    @test @allocated(rf(v)) == 0
     vmin = DecimalValue{Int64}(typemin(Int64), 0)
     oneval = one(DecimalValue{Int64})
     mulf(vmin, oneval); divf(vmin, oneval)
