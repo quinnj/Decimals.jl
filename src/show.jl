@@ -117,7 +117,7 @@ function Base.parse(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T 
     mag, sc, neg, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
     sv = mag % Int256
-    return _torescaled(Decimal{P, S, T}, neg ? -sv : sv, sc, RoundNearest, s)
+    return _torescaled(Decimal{P, S, T}, neg ? -sv : sv, sc, nothing, s)
 end
 
 function Base.parse(::Type{DecimalValue{T}}, s::AbstractString) where {T <: StorageInt}

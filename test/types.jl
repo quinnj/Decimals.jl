@@ -195,6 +195,8 @@ end
     @test parse(Decimal64{2}, "+1.25") === Decimal{18,2}("1.25")
     @test parse(Decimal64{4}, "1.25e2") === Decimal{18,4}("125.0000")
     @test parse(Decimal64{4}, "125e-2") === Decimal{18,4}("1.2500")
+    @test_throws InexactError parse(Decimal64{2}, "1.234")
+    @test tryparse(Decimal64{2}, "1.234") === nothing
     @test parse(DecimalValue{Int64}, "1e5") === DecimalValue(100000, 0)
     @test tryparse(Decimal64{2}, "abc") === nothing
     @test tryparse(Decimal64{2}, "1.2.3") === nothing
