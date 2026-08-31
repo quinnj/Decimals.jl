@@ -5,6 +5,34 @@
 
 Base.print(io::IO, x::AbstractDecimal) = print(io, string(x))
 
+# Human-facing display: plain positional form normally, scientific notation
+# once the plain form gets unwieldy (deep-scale DecimalValues). string/print
+# always stay positional — they are the wire format.
+function Base.show(io::IO, ::MIME"text/plain", x::AbstractDecimal)
+    if decimallength(x) > 44
+        _showsci(io, x)
+    else
+        print(io, string(x))
+    end
+    return nothing
+end
+
+function _showsci(io::IO, x::AbstractDecimal)
+    m = _mag(x)
+    nd = _ndigits10(m)
+    e = (nd - 1) - scale(x)
+    buf = Base.StringVector(nd)
+    _writemag!(buf, 1, nd, m)
+    _isneg(x) && print(io, '-')
+    print(io, Char(buf[1]))
+    if nd > 1
+        print(io, '.')
+        unsafe_write(io, pointer(buf) + 1, nd - 1)
+    end
+    print(io, 'E', e < 0 ? '-' : '+', abs(e))
+    return nothing
+end
+
 # wide storage types print qualified so typed show round-trips from a clean
 # `using Decimals` namespace
 function _printstoragetype(io::IO, ::Type{T}) where {T <: StorageInt}

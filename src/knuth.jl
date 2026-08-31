@@ -188,3 +188,110 @@ function _divrem_wide(u::UInt256, d::UInt256)
     m = dl[4] == zero(UInt64) ? 3 : 4
     return _divrem_knuth(u, d, m)
 end
+
+# ---- 512-bit dividends (deep-scale division) ----
+
+# shift the 512-bit value (nhi:nlo) left by lz (0..63), returning 8 limbs
+# plus the spill limb
+@inline function _limbs512shifted(nhi::UInt256, nlo::UInt256, lz::Int)
+    l = (_limbs(nlo)..., _limbs(nhi)...)
+    lz == 0 && return (l, zero(UInt64))
+    rs = 64 - lz
+    spill = l[8] >>> rs
+    shifted = (l[1] << lz,
+               (l[2] << lz) | (l[1] >>> rs),
+               (l[3] << lz) | (l[2] >>> rs),
+               (l[4] << lz) | (l[3] >>> rs),
+               (l[5] << lz) | (l[4] >>> rs),
+               (l[6] << lz) | (l[5] >>> rs),
+               (l[7] << lz) | (l[6] >>> rs),
+               (l[8] << lz) | (l[7] >>> rs))
+    return (shifted, spill)
+end
+
+# (nhi:nlo) ÷ d with nhi < d (so the quotient fits 256 bits).
+# Single-limb divisors run the reciprocal ladder; wider ones run Knuth D
+# over the 8-limb dividend.
+function _divrem_512(nhi::UInt256, nlo::UInt256, d::UInt256)
+    nhi == zero(UInt256) && return _divrem_wide(nlo, d)
+    dl = _limbs(d)
+    if (dl[2] | dl[3] | dl[4]) == zero(UInt64)
+        d64 = dl[1]
+        lz = leading_zeros(d64)
+        dn = d64 << lz
+        v = _recip2x1(dn)
+        uu, spill = _limbs512shifted(nhi, nlo, lz)
+        r = spill
+        q8, r = _div2x1(r, uu[8], dn, v)
+        q7, r = _div2x1(r, uu[7], dn, v)
+        q6, r = _div2x1(r, uu[6], dn, v)
+        q5, r = _div2x1(r, uu[5], dn, v)
+        q4, r = _div2x1(r, uu[4], dn, v)
+        q3, r = _div2x1(r, uu[3], dn, v)
+        q2, r = _div2x1(r, uu[2], dn, v)
+        q1, r = _div2x1(r, uu[1], dn, v)
+        # nhi < d ensures q8..q5 are zero
+        return (_u256(q1, q2, q3, q4), UInt256(r >>> lz))
+    end
+    m = dl[4] != zero(UInt64) ? 4 : dl[3] != zero(UInt64) ? 3 : 2
+    lz = leading_zeros(dl[m])
+    dnl = _limbs(d << lz)
+    ul8, spill = _limbs512shifted(nhi, nlo, lz)
+    uu = (ul8..., spill)
+    dm1 = dnl[m]
+    dm2 = dnl[m - 1]
+    v = _recip2x1(dm1)
+    q = zero(UInt256)
+    for j in (8 - m):-1:0
+        ujm = uu[j + m + 1]
+        ujm1 = uu[j + m]
+        if ujm >= dm1
+            qhat = typemax(UInt64)
+            rhat = UInt128(ujm1) + UInt128(dm1)
+        else
+            qh, rh = _div2x1(ujm, ujm1, dm1, v)
+            qhat = qh
+            rhat = UInt128(rh)
+        end
+        ujm2 = uu[j + m - 1]
+        while rhat < (UInt128(1) << 64) &&
+              widemul(qhat, dm2) > ((rhat << 64) | UInt128(ujm2))
+            qhat -= one(UInt64)
+            rhat += UInt128(dm1)
+        end
+        carry = zero(UInt64)
+        borrow = zero(UInt64)
+        for i in 0:(m - 1)
+            p = widemul(qhat, dnl[i + 1]) + UInt128(carry)
+            carry = _hi64(p)
+            pl = _lo64(p)
+            t = uu[i + j + 1]
+            x1 = t - pl
+            b1 = t < pl
+            x2 = x1 - borrow
+            b2 = x1 < borrow
+            uu = Base.setindex(uu, x2, i + j + 1)
+            borrow = UInt64(b1 | b2)
+        end
+        t = uu[j + m + 1]
+        x1 = t - carry
+        b1 = t < carry
+        x2 = x1 - borrow
+        b2 = x1 < borrow
+        uu = Base.setindex(uu, x2, j + m + 1)
+        if b1 | b2
+            qhat -= one(UInt64)
+            c = zero(UInt64)
+            for i in 0:(m - 1)
+                s = UInt128(uu[i + j + 1]) + UInt128(dnl[i + 1]) + UInt128(c)
+                uu = Base.setindex(uu, _lo64(s), i + j + 1)
+                c = _hi64(s)
+            end
+            uu = Base.setindex(uu, uu[j + m + 1] + c, j + m + 1)
+        end
+        # quotient limbs above index 3 are zero because nhi < d
+        j <= 3 && (q |= UInt256(qhat) << (64 * j))
+    end
+    r = _u256(uu[1], uu[2], uu[3], uu[4])
+    return (q, r >> lz)
+end

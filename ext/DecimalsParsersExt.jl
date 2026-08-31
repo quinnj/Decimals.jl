@@ -27,6 +27,12 @@ _fullT(::Type{DecimalValue}) = DecimalValue{Int64}
     while k <= kend
         room = 77 - nd
         if room <= 0
+            # dropped digits only feed sticky: scan them a word at a time
+            @inbounds while k + 7 <= kend
+                sticky |= Parsers._load8(buf, k) != 0x3030303030303030
+                k += 8
+                dropped += 8
+            end
             @inbounds while k <= kend
                 sticky |= buf[k] != UInt8('0')
                 k += 1
@@ -36,8 +42,14 @@ _fullT(::Type{DecimalValue}) = DecimalValue{Int64}
         end
         n = min(19, kend - k + 1, room)
         chunk, _ = Parsers._digits19(buf, k, n)
-        mag, _ = _scaleup(mag, n)  # cannot overflow: nd + n <= 77
-        mag += UInt256(chunk)
+        if nd + n <= 38
+            # stay in 128-bit arithmetic while the magnitude allows
+            m128 = (mag % UInt128) * Decimals._upow10(UInt128, n) + UInt128(chunk)
+            mag = UInt256(m128)
+        else
+            mag, _ = _scaleup(mag, n)  # cannot overflow: nd + n <= 77
+            mag += UInt256(chunk)
+        end
         nd = nd == 0 ? (mag == zero(UInt256) ? 0 : _ndigits10(mag)) : nd + n
         k += n
     end
@@ -210,25 +222,32 @@ end
     @inbounds b = buf[i]
     neg = b == UInt8('-')
     (neg | (b == UInt8('+'))) && (i += 1)
+    # measure both digit runs before extracting anything, so oversized tokens
+    # bail to the wide scanner without wasted gulps
     e1 = Parsers._digitrunend(buf, i, j)
     intn = e1 - i
     intn > 38 && return (Z, 0, false, start, false, true)
-    m = intn > 0 ? _digits38(buf, i, intn) : Z
-    i = e1
     fracn = 0
-    @inbounds if i <= j && buf[i] == dec
-        k = i + 1
-        e2 = Parsers._digitrunend(buf, k, j)
-        fracn = e2 - k
+    e2 = e1
+    haspoint = false
+    @inbounds if e1 <= j && buf[e1] == dec
+        haspoint = true
+        e2 = Parsers._digitrunend(buf, e1 + 1, j)
+        fracn = e2 - (e1 + 1)
+        intn + fracn > 38 && return (Z, 0, false, start, false, true)
+    end
+    m = intn > 0 ? _digits38(buf, i, intn) : Z
+    if haspoint
         if fracn > 0
-            intn + fracn > 38 && return (Z, 0, false, start, false, true)
-            m = m * Decimals._upow10(UInt128, fracn) + _digits38(buf, k, fracn)
+            m = m * Decimals._upow10(UInt128, fracn) + _digits38(buf, e1 + 1, fracn)
             i = e2
         elseif intn > 0
-            i = k
+            i = e1 + 1
         else
             return (Z, 0, neg, start, false, false)
         end
+    else
+        i = e1
     end
     intn + fracn > 0 || return (Z, 0, neg, start, false, false)
     sc = fracn

@@ -85,6 +85,39 @@ end
 Divide two decimals, rounding the true quotient at scale `max(scale(x),
 scale(y))` with `mode`. `x / y` is `divide(x, y, RoundNearest)`.
 """
+# round(mag*10^k / d): the scaled dividend usually fits 256 bits; deep-scale
+# operands spill into a 512-bit dividend handled by _divrem_512. Returns
+# (q, ok); ok=false means the dividend or quotient exceeds any representable
+# result (genuine overflow).
+@inline function _scaledivround(mag::UInt256, k::Int, d::UInt256, neg::Bool,
+                                mode::RoundingMode)
+    n, ovf = _scaleup(mag, k)
+    if !ovf
+        q, _ = _divround(n, d, neg, mode)
+        return (q, true)
+    end
+    return _scaledivround512(mag, k, d, neg, mode)
+end
+
+@noinline function _scaledivround512(mag::UInt256, k::Int, d::UInt256, neg::Bool,
+                                     mode::RoundingMode)
+    if k > 77
+        m1, ovf1 = _scaleup(mag, k - 77)
+        ovf1 && return (zero(UInt256), false)
+        mag = m1
+        k = 77
+    end
+    hi, lo = _mul256full(mag, _upow10(UInt256, k))
+    hi >= d && return (zero(UInt256), false)  # quotient >= 2^256
+    q, r = _divrem_512(hi, lo, d)
+    r == zero(UInt256) && return (q, true)
+    complement = d - r
+    inc = _roundinc(r < complement, r == complement,
+                    (q & one(UInt256)) != zero(UInt256), neg, mode)
+    (inc && q == typemax(UInt256)) && return (q, false)
+    return (inc ? q + one(UInt256) : q, true)
+end
+
 @inline function divide(x::Decimal{P1, S1, T1}, y::Decimal{P2, S2, T2},
                         mode::RoundingMode=RoundNearest) where {P1, S1, T1 <: StorageInt, P2, S2, T2 <: StorageInt}
     RT = _divtype(Decimal{P1, S1, T1}, Decimal{P2, S2, T2})
@@ -92,10 +125,9 @@ scale(y))` with `mode`. `x / y` is `divide(x, y, RoundNearest)`.
     S = scale(RT)
     neg = _isneg(x) ⊻ _isneg(y)
     # quotient*10^S = u1*10^(S - S1 + S2) / u2
-    n, ovf = _scaleup(_tomag256(x.unscaled), S - S1 + S2)
-    ovf && _throwop(:/, x, y)
-    q, _ = _divround(n, _tomag256(y.unscaled), neg, mode)
-    q > UInt256(_maxmag(RT)) && _throwop(:/, x, y)
+    q, ok = _scaledivround(_tomag256(x.unscaled), S - S1 + S2,
+                           _tomag256(y.unscaled), neg, mode)
+    (!ok || q > UInt256(_maxmag(RT))) && _throwop(:/, x, y)
     u = (q % _utype(_storage(RT))) % _storage(RT)
     return reinterpret(RT, neg ? -u : u)
 end
@@ -381,10 +413,9 @@ function divide(x::DecimalValue{T}, y::DecimalValue{T},
     iszero(y) && throw(DivideError())
     s = max(scale(x), scale(y))
     neg = _isneg(x) ⊻ _isneg(y)
-    n, ovf = _scaleup(_tomag256(x.unscaled), s - scale(x) + scale(y))
-    ovf && _throwvalop(:/)
-    q, _ = _divround(n, _tomag256(y.unscaled), neg, mode)
-    !_fitsigned(q, neg, T) && _throwvalop(:/)
+    q, ok = _scaledivround(_tomag256(x.unscaled), s - scale(x) + scale(y),
+                           _tomag256(y.unscaled), neg, mode)
+    (!ok || !_fitsigned(q, neg, T)) && _throwvalop(:/)
     u = (q % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, s)
 end

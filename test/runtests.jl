@@ -7,5 +7,6 @@ using Test
     include("format.jl")
     include("broadcast.jl")
     include("floatconv.jl")
+    include("literals.jl")
     include("parsers.jl")
 end
