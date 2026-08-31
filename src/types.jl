@@ -95,9 +95,10 @@ The scale (count of fractional decimal digits) of a decimal value.
 @inline _storage(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} = T
 @inline _storage(::Type{DecimalValue{T}}) where {T <: StorageInt} = T
 
-# largest legal magnitude for the type: 10^P - 1
-@inline _maxmag(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
-    _upow10(_utype(T), P) - one(_utype(T))
+# largest legal magnitude for the type: 10^P - 1, folded to a literal
+@generated function _maxmag(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt}
+    return :($(_fromfullbig(_utype(T), big(10)^P - 1)))
+end
 
 @inline _mag(x::Decimal) = _mag(x.unscaled)
 @inline _mag(x::DecimalValue) = _mag(x.unscaled)

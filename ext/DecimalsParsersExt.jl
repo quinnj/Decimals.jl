@@ -62,36 +62,129 @@ end
     return (eneg ? ev : -ev, e3)
 end
 
-# fast scan for tokens whose digits fit one UInt64 mantissa (<= 19 digits, the
-# overwhelmingly common case). Returns (m, sc, neg, nextpos, ok, needwide);
-# needwide=true means fall back to the wide scanner.
+# Per-byte whole-token parse for spans of 1..16 bytes: [+-]digits[.digits],
+# two tight loops (integer run, then fraction run) so no per-digit scale
+# bookkeeping. Anything else — exponents, weird bytes, leftovers — defers to
+# the general scanner, which also owns rejecting genuinely invalid input.
+# The branchy per-byte form beats wide SWAR here: short varied tokens keep
+# these branches well-predicted, and there is no clamped-gather tail.
+# Returns (m, sc, neg, handled).
+@inline function _scantiny(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
+    @inbounds begin
+        b = buf[i]
+        neg = b == UInt8('-')
+        i += Int(neg | (b == UInt8('+')))
+        m = UInt64(0)
+        ndig = 0
+        while i <= j
+            d = buf[i] - UInt8('0')
+            d > 0x09 && break
+            m = m * UInt64(10) + d
+            ndig += 1
+            i += 1
+        end
+        sc = 0
+        if i <= j && buf[i] == dec
+            i += 1
+            fs = i
+            while i <= j
+                d = buf[i] - UInt8('0')
+                d > 0x09 && break
+                m = m * UInt64(10) + d
+                i += 1
+            end
+            sc = i - fs
+            ndig += sc
+        end
+        (i <= j || ndig == 0) && return (UInt64(0), 0, neg, false)
+        return (m, sc, neg, true)
+    end
+end
+
+# skip a run of ASCII zeros, SWAR-wide then per byte
+@inline function _skipzeros(buf::AbstractVector{UInt8}, k::Int, j::Int)
+    @inbounds while k <= j && j - k >= 7
+        Parsers._load8(buf, k) == 0x3030303030303030 || break
+        k += 8
+    end
+    @inbounds while k <= j && buf[k] == UInt8('0')
+        k += 1
+    end
+    return k
+end
+
+# fused digit-run consumer: recognize and accumulate in one pass (the float
+# parser's load8/_alldigits8/_rundigits idiom). Stops at the first non-digit;
+# cnt > 19 signals the caller to fall back to a wider scanner.
+@inline function _scanrun64(buf::AbstractVector{UInt8}, k::Int, j::Int,
+                            m::UInt64, cnt::Int)
+    @inbounds while k <= j && j - k >= 7
+        w = Parsers._load8(buf, k)
+        if Parsers._alldigits8(w)
+            cnt += 8
+            cnt > 19 && return (m, k, cnt)
+            m = m * UInt64(100_000_000) + Parsers._digits8(w)
+            k += 8
+        else
+            nd = Parsers._firstnondigit8(w)
+            if nd > 0
+                cnt += nd
+                cnt > 19 && return (m, k, cnt)
+                d, _ = Parsers._rundigits(w, nd)
+                m = m * @inbounds(Parsers._POW10U64[nd + 1]) + d
+                k += nd
+            end
+            return (m, k, cnt)
+        end
+    end
+    @inbounds if k <= j
+        w = Parsers._gather8(buf, k, j)
+        nd = min(Parsers._firstnondigit8(w), j - k + 1)
+        if nd > 0
+            cnt += nd
+            cnt > 19 && return (m, k, cnt)
+            d, _ = Parsers._rundigits(w, nd)
+            m = m * @inbounds(Parsers._POW10U64[nd + 1]) + d
+            k += nd
+        end
+    end
+    return (m, k, cnt)
+end
+
+# fast scan for tokens whose significant digits fit one UInt64 mantissa
+# (<= 19, the overwhelmingly common case; leading zeros don't count).
+# Returns (m, sc, neg, nextpos, ok, needwide); needwide=true means fall back
+# to a wider scanner.
 @inline function _scandec64(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
     start = i
     i > j && return (UInt64(0), 0, false, start, false, false)
     @inbounds b = buf[i]
     neg = b == UInt8('-')
     (neg | (b == UInt8('+'))) && (i += 1)
-    e1 = Parsers._digitrunend(buf, i, j)
-    intn = e1 - i
-    intn > 19 && return (UInt64(0), 0, false, start, false, true)
-    m = intn > 0 ? Parsers._digits19(buf, i, intn)[1] : UInt64(0)
-    i = e1
+    iz = _skipzeros(buf, i, j)
+    sawint = iz > i
+    m, i2, cnt = _scanrun64(buf, iz, j, UInt64(0), 0)
+    cnt > 19 && return (UInt64(0), 0, false, start, false, true)
+    sawint |= i2 > iz
+    i = i2
     fracn = 0
+    sawfrac = false
     @inbounds if i <= j && buf[i] == dec
         k = i + 1
-        e2 = Parsers._digitrunend(buf, k, j)
-        fracn = e2 - k
-        if fracn > 0
-            intn + fracn > 19 && return (UInt64(0), 0, false, start, false, true)
-            m = m * Parsers._POW10U64[fracn + 1] + Parsers._digits19(buf, k, fracn)[1]
-            i = e2
-        elseif intn > 0
-            i = k  # trailing point after digits is consumed ("1.")
-        else
-            return (UInt64(0), 0, neg, start, false, false)
+        if m == zero(UInt64)
+            kz = _skipzeros(buf, k, j)
+            fracn += kz - k
+            sawfrac |= kz > k
+            k = kz
         end
+        m, i2, cnt = _scanrun64(buf, k, j, m, cnt)
+        cnt > 19 && return (UInt64(0), 0, false, start, false, true)
+        fracn += i2 - k
+        sawfrac |= i2 > k
+        (sawint | sawfrac) || return (UInt64(0), 0, neg, start, false, false)
+        i = i2  # equals k when the point had no digits after it ("1.")
     end
-    intn + fracn > 0 || return (UInt64(0), 0, neg, start, false, false)
+    (sawint | sawfrac) || return (UInt64(0), 0, neg, start, false, false)
     sc = fracn
     @inbounds if i <= j && (buf[i] == UInt8('e') || buf[i] == UInt8('E'))
         adj, i = _scanexp(buf, i, j)
@@ -208,8 +301,28 @@ end
 @inline function _parsewhole(::Type{DT}, buf::AbstractVector{UInt8}, i::Int, j::Int,
                              dec::UInt8, mode::RoundingMode,
                              ::Val{Throw}) where {DT, Throw}
-    orig_i, orig_j = i, j
-    i, j = Parsers._stripws(buf, i, j)
+    # hot path: unpadded short tokens skip even the whitespace strip — a
+    # padded or exotic input simply fails over to the general scanner, which
+    # strips and re-derives everything
+    if 0 <= j - i <= 15
+        m, sct, negt, handled = _scantiny(buf, i, j, dec)
+        if handled
+            v, fit = _fit(DT, m, sct, negt, false, mode)
+            if !fit
+                Throw && _throwrange(DT, buf, i, j)
+                return nothing
+            end
+            return v
+        end
+    end
+    return _parsegeneral(DT, buf, i, j, dec, mode, Val(Throw))
+end
+
+@noinline function _parsegeneral(::Type{DT}, buf::AbstractVector{UInt8},
+                                 orig_i::Int, orig_j::Int,
+                                 dec::UInt8, mode::RoundingMode,
+                                 ::Val{Throw}) where {DT, Throw}
+    i, j = Parsers._stripws(buf, orig_i, orig_j)
     m64, sc, neg, nextpos, ok, needwide = _scandec64(buf, i, j, dec)
     if !needwide
         if !(ok && nextpos > j)
