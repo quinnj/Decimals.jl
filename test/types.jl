@@ -246,6 +246,10 @@ end
     @test string(Decimal{18,0}(-7)) == "-7"
     @test string(DecimalValue(0, 3)) == "0.000"
     @test parse(Decimal64{2}, " 1.25 ") === Decimal{18,2}("1.25")
+    for ws in ('\t', '\n', '\v', '\f', '\r', ' ')
+        @test parse(Decimal64{2}, string(ws, "1.25", ws)) ===
+              Decimal{18,2}("1.25")
+    end
     @test parse(Decimal{9,2}, "1.25") === Decimal{9,2}("1.25")
     @test tryparse(Decimal{9,2}, "1.25") === Decimal{9,2}("1.25")
     @test parse(Decimal64{2}, "+1.25") === Decimal{18,2}("1.25")

@@ -60,16 +60,20 @@ end
 # largest magnitude that can safely take one more digit
 const _PARSEMAX = (typemax(UInt256) - UInt256(9)) ÷ UInt256(10)
 
+@inline function _isparsespace(c)
+    return c == UInt8(' ') || UInt8('\t') <= c <= UInt8('\r')
+end
+
 # parse ±digits[.digits][eE±digits] into (mag, sc, neg): value == ±mag * 10^-sc
 function _parsecore(s::AbstractString)
     b = codeunits(s)
     n = length(b)
     i = 1
-    while i <= n && (b[i] == UInt8(' ') || b[i] == UInt8('\t'))
+    while i <= n && _isparsespace(b[i])
         i += 1
     end
     j = n
-    while j >= i && (b[j] == UInt8(' ') || b[j] == UInt8('\t'))
+    while j >= i && _isparsespace(b[j])
         j -= 1
     end
     i > j && return (zero(UInt256), 0, false, false)
