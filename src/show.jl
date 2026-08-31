@@ -149,8 +149,8 @@ function Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: Union{Decimal
     try
         return parse(DT, s)
     catch e
-        e isa InterruptException && rethrow()
-        return nothing
+        e isa Union{ArgumentError, InexactError, OverflowError} && return nothing
+        rethrow()
     end
 end
 
