@@ -9,8 +9,9 @@
 @inline function _divround(n::UInt256, d::UInt256, neg::Bool, mode::RoundingMode)
     q, r = _divrem_wide(n, d)
     r == zero(UInt256) && return (q, false)
-    t = r << 1  # r < d <= 2^255, no overflow
-    inc = _roundinc(t < d, t == d, (q & one(UInt256)) != zero(UInt256), neg, mode)
+    complement = d - r
+    inc = _roundinc(r < complement, r == complement,
+                    (q & one(UInt256)) != zero(UInt256), neg, mode)
     return (inc ? q + one(UInt256) : q, true)
 end
 

@@ -72,6 +72,9 @@ end
     large = (big(2)^300 + 1) // (big(2)^301 + 3)
     @test round(Decimal{18,4}, large) === Decimal{18,4}("0.5000")
     @test round(Decimal{18,4}, -large, RoundDown) === Decimal{18,4}("-0.5000")
+    wide_den = (UInt256(1) << 255) + UInt256(1)
+    near_one = Rational{UInt256}(wide_den - UInt256(1), wide_den)
+    @test round(Decimal{1,0}, near_one) === Decimal{1,0}(1)
     rng = Xoshiro(2002)
     for _ in 1:500
         n = rand(rng, -10^6:10^6)
