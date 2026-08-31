@@ -425,6 +425,10 @@ Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{DecimalValue{T2}}) where {T1 
     DecimalValue{promote_type(T1, T2)}
 Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{Decimal{P, S, T}}) where {T1 <: StorageInt, P, S, T <: StorageInt} =
     DecimalValue{promote_type(T1, T)}
-Base.promote_rule(::Type{DecimalValue{T}},
-                  ::Type{I}) where {T, I <: Union{Bool, Base.BitInteger, Int256}} =
-    DecimalValue{promote_type(T, I)}
+@generated function Base.promote_rule(::Type{DecimalValue{T}},
+                                      ::Type{I}) where {T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256, UInt256}}
+    ibits = 8 * sizeof(I) + (I <: Unsigned)
+    bits = min(max(8 * sizeof(T), ibits), 256)
+    PT = bits <= 32 ? Int32 : bits <= 64 ? Int64 : bits <= 128 ? Int128 : Int256
+    return :(DecimalValue{$PT})
+end

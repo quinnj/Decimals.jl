@@ -242,4 +242,9 @@ end
     @test promote_type(DecimalValue{Int64}, DecimalValue{Int128}) === DecimalValue{Int128}
     @test promote_type(DecimalValue{Int64}, Decimal{38,2,Int128}) === DecimalValue{Int128}
     @test promote_type(DecimalValue{Int64}, Int32) === DecimalValue{Int64}
+    @test promote_type(DecimalValue{Int32}, UInt32) === DecimalValue{Int64}
+    @test promote_type(DecimalValue{Int128}, UInt128) === DecimalValue{Int256}
+    @test promote_type(DecimalValue{Int256}, UInt256) === DecimalValue{Int256}
+    @test DecimalValue{Int128}(1, 2) + UInt128(1) === DecimalValue{Int256}(101, 2)
+    @test UInt128(1) + DecimalValue{Int128}(1, 2) === DecimalValue{Int256}(101, 2)
 end
