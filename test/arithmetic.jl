@@ -97,6 +97,56 @@ end
     @test divide(d("0.75"), d("2.00")) == parse(Decimal{20,2,Int128}, "0.38")
 end
 
+@testset "integer quotient and remainder" begin
+    D = Decimal{18,2,Int64}
+    modes = (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
+             RoundToZero, RoundFromZero, RoundDown, RoundUp)
+    for (a, b) in ((D("5.50"), D("2.00")),
+                   (D("-5.00"), D("2.00")),
+                   (D("5.00"), D("-2.00")),
+                   (D("-5.00"), D("-2.00")))
+        ratio = oracle(a) / oracle(b)
+        for mode in modes
+            wantq = div(numerator(ratio), denominator(ratio), mode)
+            gotq = div(a, b, mode)
+            gotr = rem(a, b, mode)
+            @test typeof(gotq) === D
+            @test typeof(gotr) === D
+            @test oracle(gotq) == wantq
+            @test oracle(gotr) == oracle(a) - oracle(b) * wantq
+            @test oracle(a) == oracle(b) * oracle(gotq) + oracle(gotr)
+            @test divrem(a, b, mode) === (gotq, gotr)
+        end
+    end
+
+    a = Decimal{18,1,Int64}("5.5")
+    b = Decimal{9,2,Int32}("0.20")
+    RT = promote_type(typeof(a), typeof(b))
+    @test div(a, b) === RT("27.00")
+    @test rem(a, b) === RT("0.10")
+    @test mod(-a, b) === RT("0.10")
+    @test fldmod(-a, b) === (RT("-28.00"), RT("0.10"))
+    @test collect(D("1.20"):D("0.10"):D("1.50")) ==
+          D[D("1.20"), D("1.30"), D("1.40"), D("1.50")]
+    @test_throws DivideError div(a, zero(b))
+    @test_throws DivideError rem(a, zero(b))
+    @test_throws OverflowError div(typemax(Decimal64{2}), eps(Decimal64{2}))
+    @test rem(typemax(Decimal64{2}), eps(Decimal64{2})) === zero(Decimal64{2})
+
+    x = DecimalValue{Int256}(1, 0)
+    tiny = DecimalValue{Int256}(1, 100)
+    @test rem(x, tiny) === DecimalValue{Int256}(0, 100)
+    @test_throws OverflowError div(x, tiny)
+    vx = DecimalValue{Int64}(-550, 2)
+    vy = DecimalValue{Int64}(200, 2)
+    @test div(vx, vy, RoundNearest) === DecimalValue{Int64}(-300, 2)
+    @test rem(vx, vy, RoundNearest) === DecimalValue{Int64}(50, 2)
+    small = DecimalValue{Int64}(1, 1)
+    large = DecimalValue{Int64}(typemax(Int64), 0)
+    @test div(small, large, RoundFromZero) === DecimalValue{Int64}(10, 1)
+    @test_throws OverflowError rem(small, large, RoundFromZero)
+end
+
 @testset "round family" begin
     rng = Xoshiro(3004)
     d(s) = Decimal{18,2}(s)
@@ -201,8 +251,9 @@ end
     addf(x, y) = x + y
     mulf(x, y) = x * y
     divf(x, y) = x / y
+    qrf(x, y) = divrem(x, y, RoundNearest)
     cmpf(x, y) = x < y
-    for f in (addf, mulf, divf, cmpf)
+    for f in (addf, mulf, divf, qrf, cmpf)
         f(a, b); f(c, c); f(e, e)
         @test @allocated(f(a, b)) == 0
         @test @allocated(f(c, c)) == 0
