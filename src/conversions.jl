@@ -351,13 +351,13 @@ Base.ceil(::Type{I}, x::AbstractDecimal) where {I <: Integer} =
 # ---- Decimal -> Rational ----
 
 function Base.Rational{I}(x::AbstractDecimal) where {I <: Integer}
-    s = scale(x)
-    den = s <= _tablemax(UInt128) ? convert(I, _upow10(UInt128, s)) :
-          convert(I, _tobig(_upow10(UInt256, min(s, _tablemax(UInt256)))))
-    return convert(I, x.unscaled) // den
+    num = _tobigsigned(x.unscaled)
+    den = big(10)^scale(x)
+    factor = gcd(abs(num), den)
+    return convert(I, div(num, factor)) // convert(I, div(den, factor))
 end
 Base.Rational(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = Rational{T}(x)
-Base.Rational(x::DecimalValue{T}) where {T <: StorageInt} = Rational{T}(x)
+Base.Rational(x::DecimalValue) = Rational{BigInt}(x)
 
 # ---- Decimal -> AbstractFloat ----
 

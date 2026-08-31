@@ -77,6 +77,11 @@ end
     @test round(Decimal{9,2}, 2//3, RoundUp) === Decimal{9,2}("0.67")
     @test Rational(Decimal{18,2}("1.25")) === 5//4
     @test Rational{Int32}(Decimal{18,2}("1.25")) === Int32(5)//Int32(4)
+    @test Rational{Int8}(Decimal{18,18}("0.1")) === Int8(1)//Int8(10)
+    tiny = DecimalValue{Int64}(1, 100)
+    @test Rational{BigInt}(tiny) == big(1)//big(10)^100
+    @test Rational(tiny) isa Rational{BigInt}
+    @test Rational(tiny) == big(1)//big(10)^100
     @test Decimal{38,10}(big(1)//big(3) * 0) == 0
     @test round(Decimal{18,2}, big(1)//big(3)) === Decimal{18,2}("0.33")
     large = (big(2)^300 + 1) // (big(2)^301 + 3)
