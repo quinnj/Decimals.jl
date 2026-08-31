@@ -407,6 +407,23 @@ end
     return u < zero(u) ? -value : value
 end
 
+function Base.BigFloat(
+        x::AbstractDecimal,
+        mode::Base.MPFR.MPFRRoundingMode=Base.MPFR.rounding_raw(BigFloat);
+        precision::Integer=Base.precision(BigFloat))
+    numbig = _tobigsigned(x.unscaled)
+    denbig = big(10)^scale(x)
+    numbits = max(ndigits(abs(numbig), base=2), 2)
+    denbits = max(ndigits(denbig, base=2), 2)
+    num = BigFloat(numbig; precision=numbits)
+    den = BigFloat(denbig; precision=denbits)
+    result = BigFloat(; precision)
+    ccall((:mpfr_div, :libmpfr), Int32,
+          (Ref{BigFloat}, Ref{BigFloat}, Ref{BigFloat}, Int32),
+          result, num, den, mode)
+    return result
+end
+
 _tobigsigned(u::Integer) = big(u)
 _tobigsigned(u::Int256) = (n = _tobig(_mag(u)); u < 0 ? -n : n)
 

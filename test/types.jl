@@ -142,6 +142,12 @@ end
     @test reinterpret(UInt32, Float32(DecimalValue{Int64}(943052102, 47))) == 0x0066b075
     @test reinterpret(UInt64, Float64(DecimalValue{Int64}(4362848394127855029, 327))) ==
           0x000323212e2e46fb
+    exact = Decimal{18,2}("1.25")
+    @test BigFloat(exact; precision=128) == BigFloat(5; precision=128) / 4
+    inexact = Decimal{18,2}("1.10")
+    down = BigFloat(inexact, RoundDown; precision=4)
+    up = BigFloat(inexact, RoundUp; precision=4)
+    @test down < inexact < up
 end
 
 @testset "decimal<->decimal and rescale" begin
