@@ -4,13 +4,13 @@ using Decimals: unscaled, scale, _tobigsigned, _maxmag, _tobig
 using BitIntegers
 using Test, Random
 
-oracle(x) = _tobigsigned(unscaled(x)) // big(10)^scale(x)
+arithmetic_oracle(x) = _tobigsigned(unscaled(x)) // big(10)^scale(x)
 
 maxmagbig(DT) = _tobig(_maxmag(DT))
 
 function checkexact(op, a, b, got)
-    expected = op(oracle(a), oracle(b))
-    @test oracle(got) == expected
+    expected = op(arithmetic_oracle(a), arithmetic_oracle(b))
+    @test arithmetic_oracle(got) == expected
     return nothing
 end
 
@@ -34,11 +34,11 @@ _randdec(rng, ::Type{Decimal{P, S, T}}, digs) where {P, S, T} =
             a = _randdec(rng, A, 14)
             b = _randdec(rng, B, 14)
             for (op, f) in ((:+, +), (:-, -))
-                expected = f(oracle(a), oracle(b))
+                expected = f(arithmetic_oracle(a), arithmetic_oracle(b))
                 if fits(expected, RT)
                     got = f(a, b)
                     @test typeof(got) === RT
-                    @test oracle(got) == expected
+                    @test arithmetic_oracle(got) == expected
                 else
                     @test_throws OverflowError f(a, b)
                 end
@@ -59,9 +59,9 @@ end
         for _ in 1:300
             a = _randdec(rng, A, 9)
             b = _randdec(rng, B, 9)
-            expected = oracle(a) * oracle(b)
+            expected = arithmetic_oracle(a) * arithmetic_oracle(b)
             got = a * b
-            @test oracle(got) == expected
+            @test arithmetic_oracle(got) == expected
             @test scale(typeof(got)) == scale(A) + scale(B)
         end
     end
@@ -85,7 +85,7 @@ end
             mode = rand(rng, modes)
             got = divide(a, b, mode)
             S = scale(typeof(got))
-            q = oracle(a) / oracle(b)
+            q = arithmetic_oracle(a) / arithmetic_oracle(b)
             want = div(numerator(q) * big(10)^S, denominator(q), mode)
             @test _tobigsigned(unscaled(got)) == want
         end
@@ -105,16 +105,19 @@ end
                    (D("-5.00"), D("2.00")),
                    (D("5.00"), D("-2.00")),
                    (D("-5.00"), D("-2.00")))
-        ratio = oracle(a) / oracle(b)
+        ratio = arithmetic_oracle(a) / arithmetic_oracle(b)
         for mode in modes
             wantq = div(numerator(ratio), denominator(ratio), mode)
             gotq = div(a, b, mode)
             gotr = rem(a, b, mode)
             @test typeof(gotq) === D
             @test typeof(gotr) === D
-            @test oracle(gotq) == wantq
-            @test oracle(gotr) == oracle(a) - oracle(b) * wantq
-            @test oracle(a) == oracle(b) * oracle(gotq) + oracle(gotr)
+            @test arithmetic_oracle(gotq) == wantq
+            @test arithmetic_oracle(gotr) ==
+                  arithmetic_oracle(a) - arithmetic_oracle(b) * wantq
+            @test arithmetic_oracle(a) ==
+                  arithmetic_oracle(b) * arithmetic_oracle(gotq) +
+                  arithmetic_oracle(gotr)
             @test divrem(a, b, mode) === (gotq, gotr)
         end
     end
@@ -175,7 +178,7 @@ end
         got = round(a, mode; digits=dg)
         want = div(_tobigsigned(unscaled(a)), big(10)^(scale(a) - dg), mode) //
                big(10)^dg
-        @test oracle(got) == want
+        @test arithmetic_oracle(got) == want
     end
 end
 
@@ -184,13 +187,13 @@ end
     v = [_randdec(rng, Decimal{18,4,Int64}, 12) for _ in 1:10_000]
     s = sum(v)
     @test typeof(s) === Decimal{38,4,Int128}
-    @test oracle(s) == sum(oracle, v)
+    @test arithmetic_oracle(s) == sum(arithmetic_oracle, v)
     v32 = [_randdec(rng, Decimal{9,2,Int32}, 7) for _ in 1:10_000]
     s32 = sum(v32)
     @test typeof(s32) === Decimal{38,2,Int128}
-    @test oracle(s32) == sum(oracle, v32)
+    @test arithmetic_oracle(s32) == sum(arithmetic_oracle, v32)
     v256 = [_randdec(rng, Decimal{76,15,Int256}, 20) for _ in 1:1_000]
-    @test oracle(sum(v256)) == sum(oracle, v256)
+    @test arithmetic_oracle(sum(v256)) == sum(arithmetic_oracle, v256)
 end
 
 @testset "mixed-type arithmetic" begin
@@ -225,12 +228,15 @@ end
         ub, sb = rand(rng, -10^12:10^12), rand(rng, 0:15)
         a = DecimalValue{Int128}(ua, sa)
         b = DecimalValue{Int128}(ub, sb)
-        @test oracle(a + b) == oracle(a) + oracle(b)
-        @test oracle(a - b) == oracle(a) - oracle(b)
-        @test oracle(a * b) == oracle(a) * oracle(b)
+        @test arithmetic_oracle(a + b) ==
+              arithmetic_oracle(a) + arithmetic_oracle(b)
+        @test arithmetic_oracle(a - b) ==
+              arithmetic_oracle(a) - arithmetic_oracle(b)
+        @test arithmetic_oracle(a * b) ==
+              arithmetic_oracle(a) * arithmetic_oracle(b)
         if !iszero(b)
             s = max(sa, sb)
-            q = oracle(a) / oracle(b)
+            q = arithmetic_oracle(a) / arithmetic_oracle(b)
             want = div(numerator(q) * big(10)^s, denominator(q), RoundNearest)
             @test _tobigsigned(unscaled(a / b)) == want
         end
