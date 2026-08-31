@@ -69,6 +69,9 @@ end
     @test Rational{Int32}(Decimal{18,2}("1.25")) === Int32(5)//Int32(4)
     @test Decimal{38,10}(big(1)//big(3) * 0) == 0
     @test round(Decimal{18,2}, big(1)//big(3)) === Decimal{18,2}("0.33")
+    large = (big(2)^300 + 1) // (big(2)^301 + 3)
+    @test round(Decimal{18,4}, large) === Decimal{18,4}("0.5000")
+    @test round(Decimal{18,4}, -large, RoundDown) === Decimal{18,4}("-0.5000")
     rng = Xoshiro(2002)
     for _ in 1:500
         n = rand(rng, -10^6:10^6)

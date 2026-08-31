@@ -73,8 +73,8 @@ end
 
 @noinline function _fromrational_big(::Type{Decimal{P, S, T}}, x::Rational,
                                      mode) where {P, S, T <: StorageInt}
-    num = _tobig(_tomag256(x.num)) * big(10)^S
-    den = _tobig(_tomag256(x.den))
+    num = abs(_tobigsigned(x.num)) * big(10)^S
+    den = abs(_tobigsigned(x.den))
     q, r = divrem(num, den)
     if r != 0
         mode === nothing && _throwinexact(Decimal{P, S, T}, x)
