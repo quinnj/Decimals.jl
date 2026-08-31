@@ -29,6 +29,7 @@ _utype(::Type{Int256}) = UInt256
 _widen(::Type{Int32}) = Int64
 _widen(::Type{Int64}) = Int128
 _widen(::Type{Int128}) = Int256
+_widen(::Type{Int256}) = Int256
 
 # fold parameter validation to a compile-time constant
 @generated function _checkdecparams(::Val{P}, ::Val{S}, ::Type{T}) where {P, S, T}
@@ -124,6 +125,7 @@ Base.typemin(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
 Base.eps(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
     reinterpret(Decimal{P, S, T}, one(T))
 Base.eps(x::Decimal) = eps(typeof(x))
+Base.eps(x::DecimalValue{T}) where {T <: StorageInt} = DecimalValue{T}(one(T), x.scale)
 
 Base.widen(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
     Decimal{_capacity(_widen(T)), S, _widen(T)}
