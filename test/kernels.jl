@@ -201,3 +201,54 @@ end
     @test @allocated(wide(x256, (UInt256(1) << 130) | UInt256(7))) == 0
     @test @allocated(sd(x256, 33, RoundNearest)) == 0
 end
+
+@testset "divlu and reciprocal" begin
+    rng = Xoshiro(1008)
+    for _ in 1:200000
+        d = rand(rng, UInt64)
+        d == 0 && continue
+        hi = rand(rng, UInt64) % d
+        lo = rand(rng, UInt64)
+        q, r = D._divlu(hi, lo, d)
+        n = (UInt128(hi) << 64) | lo
+        qq, rr = divrem(n, UInt128(d))
+        @test UInt128(q) == qq
+        @test UInt128(r) == rr
+    end
+    for d in (UInt64(1), UInt64(2), UInt64(3), typemax(UInt64), typemax(UInt64) - 1,
+              UInt64(1) << 63, (UInt64(1) << 63) + 1, UInt64(10)^19, UInt64(0xffffffff),
+              UInt64(0x100000000), UInt64(0x100000001))
+        for hi in (UInt64(0), UInt64(1), d - 1), lo in (UInt64(0), UInt64(1), typemax(UInt64), d - 1)
+            hi < d || continue
+            q, r = D._divlu(hi, lo, d)
+            n = (UInt128(hi) << 64) | lo
+            qq, rr = divrem(n, UInt128(d))
+            @test UInt128(q) == qq
+            @test UInt128(r) == rr
+        end
+    end
+    for _ in 1:50000
+        d = rand(rng, UInt64) | (UInt64(1) << 63)
+        @test D._recip2x1(d) ==
+              (div(typemax(UInt128), UInt128(d)) - (UInt128(1) << 64)) % UInt64
+    end
+    for d in (UInt64(1) << 63, (UInt64(1) << 63) + 1, typemax(UInt64), typemax(UInt64) - 1)
+        @test D._recip2x1(d) ==
+              (div(typemax(UInt128), UInt128(d)) - (UInt128(1) << 64)) % UInt64
+    end
+    # divrem_wide fast tiers: single-limb/one-limb-divisor shapes
+    for _ in 1:100000
+        shape = rand(rng, 1:4)
+        ub = shape == 1 ? rand(rng, big(0):big(typemax(UInt64))) :
+             shape == 2 ? rand(rng, big(0):big(typemax(UInt128))) :
+             rand(rng, big(0):D._tobig(typemax(UInt256)))
+        db = shape <= 3 ? rand(rng, big(1):big(typemax(UInt64))) :
+             rand(rng, big(1):big(typemax(UInt128)))
+        u = D._fromfullbig(UInt256, ub)
+        d = D._fromfullbig(UInt256, db)
+        q, r = D._divrem_wide(u, d)
+        qb, rb = divrem(ub, db)
+        @test D._tobig(q) == qb
+        @test D._tobig(r) == rb
+    end
+end

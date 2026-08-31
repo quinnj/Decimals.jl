@@ -14,6 +14,7 @@ include("types.jl")
 include("conversions.jl")
 include("compare.jl")
 include("arithmetic.jl")
+include("broadcast.jl")
 include("format.jl")
 include("show.jl")
 

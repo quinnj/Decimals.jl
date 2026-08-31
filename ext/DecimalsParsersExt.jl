@@ -314,6 +314,12 @@ end
             end
             return v
         end
+    elseif j - i <= 41
+        # mid-size tokens have > 19 digits almost surely: skip the doomed
+        # UInt64 scan and go straight to the 38-digit block scanner (which
+        # itself defers to the wide scanner when needed)
+        i2, j2 = Parsers._stripws(buf, i, j)
+        return _parsewholewide(DT, buf, i, j, i2, j2, dec, mode, Val(Throw))
     end
     return _parsegeneral(DT, buf, i, j, dec, mode, Val(Throw))
 end

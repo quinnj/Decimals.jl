@@ -3,9 +3,45 @@
 # Algorithm D over 64-bit limbs. The only libcalls are one 128-bit divide to
 # form a reciprocal (by-1 path) and Base's divrem on the 128÷128 fast path.
 
-# reciprocal for 2-by-1 division: v = ⌊(2^128 - 1)/d⌋ - 2^64, d normalized
+# 128÷64 schoolbook in base 2^32 (Hacker's Delight divlu): two hardware
+# 64-bit divides, no libcall. Requires hi < d (the quotient fits 64 bits).
+@inline function _divlu(hi::UInt64, lo::UInt64, d::UInt64)
+    B32 = UInt64(1) << 32
+    s = leading_zeros(d)
+    d <<= s
+    hi = s == 0 ? hi : (hi << s) | (lo >>> (64 - s))
+    lo <<= s
+    dh = d >>> 32
+    dl = d & 0x00000000ffffffff
+    lohi = lo >>> 32
+    lolo = lo & 0x00000000ffffffff
+    q1 = hi ÷ dh
+    r1 = hi - q1 * dh
+    while q1 >= B32 || q1 * dl > (r1 << 32) | lohi
+        q1 -= one(UInt64)
+        r1 += dh
+        r1 >= B32 && break
+    end
+    m1 = (hi << 32) | lohi
+    m1 -= q1 * d  # wrapping; true value < d fits 64 bits
+    q0 = m1 ÷ dh
+    r0 = m1 - q0 * dh
+    while q0 >= B32 || q0 * dl > (r0 << 32) | lolo
+        q0 -= one(UInt64)
+        r0 += dh
+        r0 >= B32 && break
+    end
+    m0 = (m1 << 32) | lolo
+    m0 -= q0 * d
+    return ((q1 << 32) | q0, m0 >>> s)
+end
+
+# reciprocal for 2-by-1 division: v = ⌊(2^128 - 1)/d⌋ - 2^64, d normalized.
+# (2^128 - 1)/d = 2^64 + ((2^64-1-d)*2^64 + (2^64-1))/d, and the second
+# term's high word is < d, so one libcall-free _divlu computes it.
 @inline function _recip2x1(d::UInt64)
-    return (div(typemax(UInt128), UInt128(d)) - (UInt128(1) << 64)) % UInt64
+    q, _ = _divlu(typemax(UInt64) - d, typemax(UInt64), d)
+    return q
 end
 
 # GMP's udiv_qrnnd_preinv: (n1,n0) ÷ d with precomputed reciprocal v.
@@ -27,11 +63,10 @@ end
     return (q1, r)
 end
 
-# 256 ÷ 64 via four reciprocal 2-by-1 steps
+# 256 ÷ 64 via reciprocal 2-by-1 steps, skipping leading zero limbs
 function _divrem_by1(u::UInt256, d64::UInt64)
     lz = leading_zeros(d64)
     d = d64 << lz
-    v = _recip2x1(d)
     l0, l1, l2, l3 = _limbs(u)
     if lz == 0
         u4 = zero(UInt64)
@@ -43,6 +78,18 @@ function _divrem_by1(u::UInt256, d64::UInt64)
         l1 = (l1 << lz) | (l0 >>> rs)
         l0 = l0 << lz
     end
+    if (l2 | l3 | u4) == zero(UInt64)
+        # at most two significant limbs: one or two 2-by-1 steps
+        v = _recip2x1(d)
+        if l1 < d
+            q0, r = _div2x1(l1, l0, d, v)
+            return (UInt256(q0), UInt256(r >>> lz))
+        end
+        qh, rh = _div2x1(zero(UInt64), l1, d, v)
+        q0, r = _div2x1(rh, l0, d, v)
+        return (_u256(q0, qh, zero(UInt64), zero(UInt64)), UInt256(r >>> lz))
+    end
+    v = _recip2x1(d)
     q3, r = _div2x1(u4, l3, d, v)
     q2, r = _div2x1(r, l2, d, v)
     q1, r = _div2x1(r, l1, d, v)
@@ -122,9 +169,16 @@ function _divrem_wide(u::UInt256, d::UInt256)
     d == zero(UInt256) && throw(DivideError())
     u < d && return (zero(UInt256), u)
     dl = _limbs(d)
+    ul = _limbs(u)
     if dl[4] == zero(UInt64) && dl[3] == zero(UInt64)
-        dl[2] == zero(UInt64) && return _divrem_by1(u, dl[1])
-        ul = _limbs(u)
+        if dl[2] == zero(UInt64)
+            # single-limb divisor; single-limb dividend is one hardware divide
+            if (ul[2] | ul[3] | ul[4]) == zero(UInt64)
+                q, r = divrem(ul[1], dl[1])
+                return (UInt256(q), UInt256(r))
+            end
+            return _divrem_by1(u, dl[1])
+        end
         if ul[4] == zero(UInt64) && ul[3] == zero(UInt64)
             q, r = divrem(_u128(ul[2], ul[1]), _u128(dl[2], dl[1]))
             return (UInt256(q), UInt256(r))

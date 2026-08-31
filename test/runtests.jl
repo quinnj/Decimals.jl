@@ -5,5 +5,6 @@ using Test
     include("types.jl")
     include("arithmetic.jl")
     include("format.jl")
+    include("broadcast.jl")
     include("parsers.jl")
 end
