@@ -171,6 +171,20 @@ Base.reduce_first(::typeof(Base.add_sum), x::Decimal) = _sumwiden(x)
 Base.reduce_empty(::typeof(Base.add_sum), ::Type{D}) where {D <: Decimal} =
     zero(_sumtype(D))
 
+# Narrow-tier columnar sum: every |unscaled| < 10^18, so an Int128 accumulator
+# cannot overflow below 1.7e20 elements — the adds need no checks and the loop
+# vectorizes. (Int128-tier elements keep the checked add_sum path.)
+function Base.sum(v::AbstractArray{Decimal{P, S, T}};
+                  dims=:, init=nothing) where {P, S, T <: Union{Int32, Int64}}
+    (dims === (:) && init === nothing) ||
+        return Base._sum(v, dims; (init === nothing ? (;) : (; init))...)
+    s = zero(Int128)
+    @inbounds @simd for i in eachindex(v)
+        s += Int128(v[i].unscaled)
+    end
+    return reinterpret(Decimal{38, S, Int128}, s)
+end
+
 # ---- DecimalValue arithmetic (runtime scales) ----
 
 @noinline _throwvalop(op) =
