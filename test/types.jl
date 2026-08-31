@@ -253,6 +253,12 @@ end
     @test eval(Meta.parse(repr(x))) === x
     v = DecimalValue(125, 2)
     @test eval(Meta.parse(repr(v))) == v
+    sandbox = Module(:DecimalsReprSandbox)
+    Core.eval(sandbox, :(using Decimals))
+    wide = reinterpret(Decimal{75,2,Int256}, Int256(123))
+    @test Core.eval(sandbox, Meta.parse(repr(wide))) === wide
+    widevalue = DecimalValue{Int256}(123, 2)
+    @test Core.eval(sandbox, Meta.parse(repr(widevalue))) === widevalue
 end
 
 @testset "promotion" begin

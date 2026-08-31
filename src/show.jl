@@ -24,12 +24,19 @@ end
 
 Base.print(io::IO, x::AbstractDecimal) = _printdecimal(io, x.unscaled, scale(x))
 
+function _printstoragetype(io::IO, ::Type{T}) where {T <: StorageInt}
+    print(io, T === Int256 ? "Decimals.Int256" : string(T))
+    return nothing
+end
+
 function Base.show(io::IO, x::Decimal{P, S, T}) where {P, S, T <: StorageInt}
     if get(io, :compact, false)::Bool
         _printdecimal(io, x.unscaled, S)
         return nothing
     end
-    print(io, "Decimal{", P, ",", S, ",", T, "}(\"")
+    print(io, "Decimal{", P, ",", S, ",")
+    _printstoragetype(io, T)
+    print(io, "}(\"")
     _printdecimal(io, x.unscaled, S)
     print(io, "\")")
     return nothing
@@ -40,7 +47,9 @@ function Base.show(io::IO, x::DecimalValue{T}) where {T <: StorageInt}
         _printdecimal(io, x.unscaled, scale(x))
         return nothing
     end
-    print(io, "DecimalValue{", T, "}(\"")
+    print(io, "DecimalValue{")
+    _printstoragetype(io, T)
+    print(io, "}(\"")
     _printdecimal(io, x.unscaled, scale(x))
     print(io, "\")")
     return nothing
