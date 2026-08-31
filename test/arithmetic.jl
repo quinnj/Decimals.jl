@@ -142,9 +142,17 @@ end
     @test 0.25 + d === 1.5
     @test d * (1//2) === 5//8
     @test d - (1//4) === 1//1
+    @test d + big(2) === Decimal{76,2,Int256}("3.25")
+    @test big(2) + d === Decimal{76,2,Int256}("3.25")
+    @test d * big(2) === Decimal{76,2,Int256}("2.50")
+    @test big(3) * d === Decimal{76,2,Int256}("3.75")
+    @test_throws OverflowError d * big(10)^100
     a = DecimalValue(125, 2)
     @test a + Decimal{18,1}("0.5") == 1.75
     @test a * a == DecimalValue(15625, 4)
+    @test a + big(2) === DecimalValue{Int256}(325, 2)
+    @test a * big(2) === DecimalValue{Int64}(250, 2)
+    @test_throws OverflowError a * big(10)^100
 end
 
 @testset "DecimalValue arithmetic" begin

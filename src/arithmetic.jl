@@ -127,6 +127,14 @@ end
 end
 Base.:*(y::_MulInt, x::Decimal) = x * y
 
+function Base.:*(x::Decimal{P, S}, y::BigInt) where {P, S}
+    RT = Decimal{76, S, Int256}
+    product = _tobigsigned(x.unscaled) * y
+    abs(product) > _tobig(UInt256(_maxmag(RT))) && _throwop(:*, x, y)
+    return reinterpret(RT, convert(Int256, product))
+end
+Base.:*(y::BigInt, x::Decimal) = x * y
+
 function Base.:*(x::DecimalValue{T}, y::_MulInt) where {T <: StorageInt}
     neg = _isneg(x) != (y < zero(y))
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y))
@@ -135,6 +143,15 @@ function Base.:*(x::DecimalValue{T}, y::_MulInt) where {T <: StorageInt}
     return DecimalValue{T}((_isneg(x) ⊻ (y < zero(y))) ? -u : u, x.scale)
 end
 Base.:*(y::_MulInt, x::DecimalValue) = x * y
+
+function Base.:*(x::DecimalValue{T}, y::BigInt) where {T <: StorageInt}
+    product = _tobigsigned(x.unscaled) * y
+    lo = _tobigsigned(typemin(T))
+    hi = _tobigsigned(typemax(T))
+    (product < lo || product > hi) && _throwvalop(:*)
+    return DecimalValue{T}(convert(T, product), x.scale)
+end
+Base.:*(y::BigInt, x::DecimalValue) = x * y
 
 # ---- rounding to integer values within the type ----
 

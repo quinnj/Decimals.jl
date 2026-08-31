@@ -440,6 +440,8 @@ end
     P2 = min(max(P - S, _intdigits(I)) + S, 76)
     return :(Decimal{$P2, $S, $(_storagetype(P2))})
 end
+Base.promote_rule(::Type{Decimal{P, S, T}}, ::Type{BigInt}) where {P, S, T <: StorageInt} =
+    Decimal{76, S, Int256}
 
 Base.promote_rule(::Type{<:AbstractDecimal}, ::Type{F}) where {F <: AbstractFloat} = F
 
@@ -459,3 +461,5 @@ Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{Decimal{P, S, T}}) where {T1 
     PT = bits <= 32 ? Int32 : bits <= 64 ? Int64 : bits <= 128 ? Int128 : Int256
     return :(DecimalValue{$PT})
 end
+Base.promote_rule(::Type{DecimalValue{T}}, ::Type{BigInt}) where {T <: StorageInt} =
+    DecimalValue{Int256}
