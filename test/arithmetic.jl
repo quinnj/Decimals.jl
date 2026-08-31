@@ -165,6 +165,11 @@ end
         end
     end
     @test_throws OverflowError DecimalValue{Int64}(5 * 10^18, 0) + DecimalValue{Int64}(5 * 10^18, 0)
+    vmin = DecimalValue{Int64}(typemin(Int64), 0)
+    oneval = one(DecimalValue{Int64})
+    @test vmin * Int8(1) === vmin
+    @test vmin * oneval === vmin
+    @test divide(vmin, oneval) === vmin
 end
 
 @testset "allocation-free ops" begin
@@ -186,6 +191,11 @@ end
     rf(a); rf(c)
     @test @allocated(rf(a)) == 0
     @test @allocated(rf(c)) == 0
+    vmin = DecimalValue{Int64}(typemin(Int64), 0)
+    oneval = one(DecimalValue{Int64})
+    mulf(vmin, oneval); divf(vmin, oneval)
+    @test @allocated(mulf(vmin, oneval)) == 0
+    @test @allocated(divf(vmin, oneval)) == 0
 end
 
 @testset "type stability" begin

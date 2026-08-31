@@ -54,12 +54,16 @@ end
     return (x * _upow10(U, k), false)
 end
 
-# unsigned magnitude of a signed value; kernel precondition: x != typemin(T),
-# which the Decimal invariant |x| < 10^P < typemax(T) guarantees
-@inline _mag(x::T) where {T <: Signed} = unsigned(x < zero(T) ? -x : x)
+# unsigned magnitude of a signed value, including typemin(T)
+@inline _mag(x::T) where {T <: Signed} = x < zero(T) ? -unsigned(x) : unsigned(x)
 
 @inline _withsign(m::U, neg::Bool) where {U <: Unsigned} =
     neg ? -signed(m) : signed(m)
+
+@inline function _fitsigned(m::U, neg::Bool, ::Type{T}) where {U <: Unsigned, T <: Signed}
+    limit = U(unsigned(typemax(T))) + (neg ? one(U) : zero(U))
+    return m <= limit
+end
 
 # round(x / 10^k) for signed x; returns (result, inexact)
 @inline function _scaledown(x::T, k::Int, mode::RoundingMode) where {T <: Signed}
@@ -72,6 +76,6 @@ end
 @inline function _scaleup(x::T, k::Int) where {T <: Signed}
     neg = x < zero(T)
     m, ovf = _scaleup(_mag(x), k)
-    (ovf || m > unsigned(typemax(T))) && return (x, true)
+    (ovf || !_fitsigned(m, neg, T)) && return (x, true)
     return (_withsign(m, neg), false)
 end

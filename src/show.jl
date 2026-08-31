@@ -129,7 +129,7 @@ function Base.parse(::Type{DecimalValue{T}}, s::AbstractString) where {T <: Stor
         sc = 0
     end
     sc > 16383 && _throwoverflow(DecimalValue{T}, s)
-    mag > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, s)
+    !_fitsigned(mag, neg, T) && _throwoverflow(DecimalValue{T}, s)
     u = (mag % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, sc)
 end

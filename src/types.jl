@@ -139,11 +139,17 @@ Base.isinf(::AbstractDecimal) = false
 
 Base.abs(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} =
     reinterpret(Decimal{P, S, T}, abs(x.unscaled))
-Base.abs(x::DecimalValue{T}) where {T <: StorageInt} = DecimalValue{T}(abs(x.unscaled), x.scale)
+function Base.abs(x::DecimalValue{T}) where {T <: StorageInt}
+    x.unscaled == typemin(T) && throw(OverflowError("abs overflows DecimalValue{$T}"))
+    return DecimalValue{T}(abs(x.unscaled), x.scale)
+end
 
 Base.:-(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} =
     reinterpret(Decimal{P, S, T}, -x.unscaled)
-Base.:-(x::DecimalValue{T}) where {T <: StorageInt} = DecimalValue{T}(-x.unscaled, x.scale)
+function Base.:-(x::DecimalValue{T}) where {T <: StorageInt}
+    x.unscaled == typemin(T) && throw(OverflowError("- overflows DecimalValue{$T}"))
+    return DecimalValue{T}(-x.unscaled, x.scale)
+end
 Base.:+(x::AbstractDecimal) = x
 
 function Base.isinteger(x::Decimal{P, S}) where {P, S}

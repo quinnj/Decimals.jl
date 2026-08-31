@@ -128,8 +128,9 @@ end
 Base.:*(y::_MulInt, x::Decimal) = x * y
 
 function Base.:*(x::DecimalValue{T}, y::_MulInt) where {T <: StorageInt}
+    neg = _isneg(x) != (y < zero(y))
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y))
-    (hi != zero(UInt256) || lo > _tomag256(typemax(T))) && _throwvalop(:*)
+    (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
     return DecimalValue{T}((_isneg(x) ⊻ (y < zero(y))) ? -u : u, x.scale)
 end
@@ -201,8 +202,9 @@ end
 function Base.:*(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt}
     s = scale(x) + scale(y)
     s <= 16383 || _throwvalop(:*)
+    neg = _isneg(x) != _isneg(y)
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y.unscaled))
-    (hi != zero(UInt256) || lo > _tomag256(typemax(T))) && _throwvalop(:*)
+    (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
     return DecimalValue{T}((_isneg(x) ⊻ _isneg(y)) ? -u : u, s)
 end
@@ -216,7 +218,7 @@ function divide(x::DecimalValue{T}, y::DecimalValue{T},
     n, ovf = _scaleup(_tomag256(x.unscaled), s - scale(x) + scale(y))
     ovf && _throwvalop(:/)
     q, _ = _divround(n, _tomag256(y.unscaled), neg, mode)
-    q > _tomag256(typemax(T)) && _throwvalop(:/)
+    !_fitsigned(q, neg, T) && _throwvalop(:/)
     u = (q % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, s)
 end

@@ -40,6 +40,13 @@ _randdec(rng, ::Type{Decimal{P, S, T}}) where {P, S, T} =
     @test widen(Decimal256{2}) === Decimal256{2}
     @test widen(DecimalValue{Int256}) === DecimalValue{Int256}
     @test eps(DecimalValue{Int64}(120, 2)) === DecimalValue{Int64}(1, 2)
+    vmin = DecimalValue{Int64}(typemin(Int64), 0)
+    @test parse(DecimalValue{Int64}, string(vmin)) === vmin
+    @test DecimalValue{Int64}(typemin(Int64) // 1) === vmin
+    @test DecimalValue{Int64}(Float64(typemin(Int64))) === vmin
+    @test hash(vmin) == hash(big(typemin(Int64)))
+    @test_throws OverflowError -vmin
+    @test_throws OverflowError abs(vmin)
 end
 
 @testset "integer conversion" begin

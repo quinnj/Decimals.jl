@@ -227,9 +227,10 @@ function DecimalValue{T}(x::Rational) where {T <: StorageInt}
         hi == zero(UInt256) || _throwoverflow(DecimalValue{T}, x)
         n = lo
     end
-    n > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, x)
+    neg = x.num < zero(x.num)
+    !_fitsigned(n, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (n % _utype(T)) % T
-    return DecimalValue{T}(x.num < zero(x.num) ? -u : u, s)
+    return DecimalValue{T}(neg ? -u : u, s)
 end
 
 function DecimalValue{T}(x::AbstractFloat) where {T <: StorageInt}
@@ -256,7 +257,7 @@ function DecimalValue{T}(x::AbstractFloat) where {T <: StorageInt}
         m = lo
         s = k
     end
-    m > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, x)
+    !_fitsigned(m, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (m % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, s)
 end
@@ -313,7 +314,7 @@ function rescale(x::DecimalValue{T}, s::Integer,
     else
         mag, _ = _scaledown(m, scale(x) - Int(s), neg, mode)
     end
-    mag > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, x)
+    !_fitsigned(mag, neg, T) && _throwoverflow(DecimalValue{T}, x)
     u = (mag % _utype(T)) % T
     return DecimalValue{T}(neg ? -u : u, s)
 end
