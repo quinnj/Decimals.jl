@@ -47,6 +47,34 @@ end
     return (inc ? q + one(U) : q, true)
 end
 
+# sticky variant: the true value is x*10^-k plus an infinitesimal positive
+# tail (digits dropped beyond the retained precision). Sticky converts exact
+# results to below-half inexact and exact half-ties to above-half.
+@inline function _scaledown(x::U, k::Int, neg::Bool, mode::RoundingMode,
+                            sticky::Bool) where {U <: Unsigned}
+    sticky || return _scaledown(x, k, neg, mode)
+    if k == 0
+        inc = _roundinc(true, false, (x & one(U)) != zero(U), neg, mode)
+        return (inc ? x + one(U) : x, true)
+    end
+    if x == zero(U) || k >= _ndigits10(x)
+        # quotient zero; the tail keeps ties impossible and exactness false
+        k1 = k - 1
+        below = true
+        if x != zero(U) && k1 <= _halfmax(U) && k1 <= _tablemax(U)
+            below = x < U(5) * _upow10(U, k1)
+        end
+        inc = _roundinc(below, false, false, neg, mode)
+        return (inc ? one(U) : zero(U), true)
+    end
+    q = _divpow10(x, k)
+    p10 = _upow10(U, k)
+    r = x - q * p10
+    half = p10 >>> 1
+    inc = _roundinc(r < half, false, (q & one(U)) != zero(U), neg, mode)
+    return (inc ? q + one(U) : q, true)
+end
+
 # x * 10^k on a magnitude; returns (result, overflowed)
 @inline function _scaleup(x::U, k::Int) where {U <: Unsigned}
     (k == 0 || x == zero(U)) && return (x, false)

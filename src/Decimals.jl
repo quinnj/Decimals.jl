@@ -14,10 +14,12 @@ include("types.jl")
 include("conversions.jl")
 include("compare.jl")
 include("arithmetic.jl")
+include("format.jl")
 include("show.jl")
 
 @static if VERSION >= v"1.11"
-    eval(Expr(:public, :unscaled, :scale, :AbstractDecimal))
+    eval(Expr(:public, :unscaled, :scale, :AbstractDecimal,
+              :writedecimal!, :decimallength))
 end
 
 end # module

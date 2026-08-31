@@ -181,6 +181,40 @@ function _torescaled(::Type{Decimal{P, S, T}}, u::Integer, s::Int, mode,
     return _fromuval(Decimal{P, S, T}, mag, neg, x)
 end
 
+# non-throwing fit of ±mag*10^-sc (with optional sticky tail) into a target
+# type, for parser integrations: returns (value, ok) with ok=false on overflow
+@inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt256, sc::Int,
+                             neg::Bool, sticky::Bool,
+                             mode::RoundingMode) where {P, S, T <: StorageInt}
+    if sc > S
+        q, _ = _scaledown(mag, sc - S, neg, mode, sticky)
+    else
+        q, ovf = _scaleup(mag, S - sc)
+        ovf && return (zero(Decimal{P, S, T}), false)
+        if sticky
+            inc = _roundinc(true, false, (q & one(UInt256)) != zero(UInt256), neg, mode)
+            inc && (q += one(UInt256))
+        end
+    end
+    q > UInt256(_maxmag(Decimal{P, S, T})) && return (zero(Decimal{P, S, T}), false)
+    u = (q % _utype(T)) % T
+    return (reinterpret(Decimal{P, S, T}, neg ? -u : u), true)
+end
+
+@inline function _fitvalue(::Type{DecimalValue{T}}, mag::UInt256, sc::Int,
+                           neg::Bool, sticky::Bool) where {T <: StorageInt}
+    sticky && return (zero(DecimalValue{T}), false)
+    if sc < 0
+        mag, ovf = _scaleup(mag, -sc)
+        ovf && return (zero(DecimalValue{T}), false)
+        sc = 0
+    end
+    sc > 16383 && return (zero(DecimalValue{T}), false)
+    mag > _tomag256(typemax(T)) && return (zero(DecimalValue{T}), false)
+    u = (mag % _utype(T)) % T
+    return (DecimalValue{T}(neg ? -u : u, sc), true)
+end
+
 Decimal{P, S, T}(x::Decimal) where {P, S, T <: StorageInt} =
     _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), nothing, x)
 Decimal{P, S, T}(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = x

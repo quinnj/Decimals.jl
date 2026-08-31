@@ -3,55 +3,34 @@
 # land with the Parsers.jl integration (M3); these are the correct simple
 # versions.
 
-function _printdecimal(io::IO, u::Integer, s::Int)
-    neg = u < zero(u)
-    neg && print(io, '-')
-    digits = string(_tomag256(u), base=10)
-    n = ncodeunits(digits)
-    if s == 0
-        print(io, digits)
-    elseif n <= s
-        print(io, "0.")
-        for _ in 1:(s - n)
-            print(io, '0')
-        end
-        print(io, digits)
-    else
-        print(io, SubString(digits, 1, n - s), '.', SubString(digits, n - s + 1, n))
-    end
-    return nothing
-end
-
-Base.print(io::IO, x::AbstractDecimal) = _printdecimal(io, x.unscaled, scale(x))
+Base.print(io::IO, x::AbstractDecimal) = print(io, string(x))
 
 function Base.show(io::IO, x::Decimal{P, S, T}) where {P, S, T <: StorageInt}
     if get(io, :compact, false)::Bool
-        _printdecimal(io, x.unscaled, S)
+        print(io, string(x))
         return nothing
     end
-    print(io, "Decimal{", P, ",", S, ",", T, "}(\"")
-    _printdecimal(io, x.unscaled, S)
-    print(io, "\")")
+    print(io, "Decimal{", P, ",", S, ",", T, "}(\"", string(x), "\")")
     return nothing
 end
 
 function Base.show(io::IO, x::DecimalValue{T}) where {T <: StorageInt}
     if get(io, :compact, false)::Bool
-        _printdecimal(io, x.unscaled, scale(x))
+        print(io, string(x))
         return nothing
     end
-    print(io, "DecimalValue{", T, "}(\"")
-    _printdecimal(io, x.unscaled, scale(x))
-    print(io, "\")")
+    print(io, "DecimalValue{", T, "}(\"", string(x), "\")")
     return nothing
 end
 
 # ---- simple parsing ----
 
-# largest magnitude that can safely take one more digit
-const _PARSEMAX = (typemax(UInt256) - UInt256(9)) ÷ UInt256(10)
+# largest magnitude that can take one more digit while staying < 10^77:
+# 10^76 - 1 (77 retained significant digits; more become the sticky tail)
+const _ACCMAX = _upow10(UInt256, 76) - one(UInt256)
 
-# parse ±digits[.digits][eE±digits] into (mag, sc, neg): value == ±mag * 10^-sc
+# parse ±digits[.digits][eE±digits] into (mag, sc, neg, sticky, ok):
+# value == ±(mag + sticky·ε) * 10^-sc, mag retaining 77 significant digits
 function _parsecore(s::AbstractString)
     b = codeunits(s)
     n = length(b)
@@ -63,36 +42,43 @@ function _parsecore(s::AbstractString)
     while j >= i && (b[j] == UInt8(' ') || b[j] == UInt8('\t'))
         j -= 1
     end
-    i > j && return (zero(UInt256), 0, false, false)
+    i > j && return (zero(UInt256), 0, false, false, false)
     neg = false
     if b[i] == UInt8('-') || b[i] == UInt8('+')
         neg = b[i] == UInt8('-')
         i += 1
     end
     mag = zero(UInt256)
+    sticky = false
+    dropint = 0
+    fracacc = 0
     ndig = 0
     frac = -1  # count of fractional digits once '.' seen
     while i <= j
         c = b[i]
         if UInt8('0') <= c <= UInt8('9')
-            mag > _PARSEMAX &&
-                throw(OverflowError("too many digits in decimal string"))
-            mag = mag * UInt256(10) + UInt256(c - UInt8('0'))
+            d = c - UInt8('0')
+            if mag <= _ACCMAX
+                mag = mag * UInt256(10) + UInt256(d)
+                frac >= 0 && (fracacc += 1)
+            else
+                sticky |= d != 0x00
+                frac < 0 && (dropint += 1)
+            end
             ndig += 1
-            frac >= 0 && (frac += 1)
             i += 1
         elseif c == UInt8('.')
-            frac >= 0 && return (mag, 0, neg, false)  # second point
+            frac >= 0 && return (mag, 0, neg, false, false)  # second point
             frac = 0
             i += 1
         elseif c == UInt8('e') || c == UInt8('E')
             break
         else
-            return (mag, 0, neg, false)
+            return (mag, 0, neg, false, false)
         end
     end
-    ndig == 0 && return (mag, 0, neg, false)
-    sc = max(frac, 0)
+    ndig == 0 && return (mag, 0, neg, false, false)
+    sc = fracacc - dropint
     if i <= j  # exponent
         i += 1  # consume e/E
         eneg = false
@@ -100,38 +86,33 @@ function _parsecore(s::AbstractString)
             eneg = b[i] == UInt8('-')
             i += 1
         end
-        i > j && return (mag, sc, neg, false)
+        i > j && return (mag, sc, neg, sticky, false)
         ev = 0
         while i <= j
             c = b[i]
-            UInt8('0') <= c <= UInt8('9') || return (mag, sc, neg, false)
-            ev = min(ev * 10 + Int(c - UInt8('0')), 100_000)
+            UInt8('0') <= c <= UInt8('9') || return (mag, sc, neg, sticky, false)
+            ev = min(ev * 10 + Int(c - UInt8('0')), 1_000_000)
             i += 1
         end
         sc = eneg ? sc + ev : sc - ev
     end
-    return (mag, sc, neg, true)
+    return (mag, sc, neg, sticky, true)
 end
 
 function Base.parse(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T <: StorageInt}
-    mag, sc, neg, ok = _parsecore(s)
+    mag, sc, neg, sticky, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
-    sv = mag % Int256
-    return _torescaled(Decimal{P, S, T}, neg ? -sv : sv, sc, RoundNearest, s)
+    v, fit = _fitdecimal(Decimal{P, S, T}, mag, sc, neg, sticky, RoundNearest)
+    fit || _throwoverflow(Decimal{P, S, T}, s)
+    return v
 end
 
 function Base.parse(::Type{DecimalValue{T}}, s::AbstractString) where {T <: StorageInt}
-    mag, sc, neg, ok = _parsecore(s)
+    mag, sc, neg, sticky, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
-    if sc < 0
-        mag, ovf = _scaleup(mag, -sc)
-        ovf && _throwoverflow(DecimalValue{T}, s)
-        sc = 0
-    end
-    sc > 16383 && _throwoverflow(DecimalValue{T}, s)
-    mag > _tomag256(typemax(T)) && _throwoverflow(DecimalValue{T}, s)
-    u = (mag % _utype(T)) % T
-    return DecimalValue{T}(neg ? -u : u, sc)
+    v, fit = _fitvalue(DecimalValue{T}, mag, sc, neg, sticky)
+    fit || _throwoverflow(DecimalValue{T}, s)
+    return v
 end
 
 function Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: Union{Decimal, DecimalValue}}
