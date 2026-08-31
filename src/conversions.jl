@@ -374,12 +374,33 @@ function _tofloat(::Type{F}, u::Integer, s::Int) where {F <: AbstractFloat}
 end
 
 @noinline function _tofloat_slow(::Type{F}, u::Integer, s::Int) where {F}
-    num = BigFloat(_tobigsigned(u); precision=max(8 * sizeof(u), 8))
-    den = BigFloat(big(10)^s; precision=max(64, 4 * s))
-    q = BigFloat(; precision=precision(F) isa Int ? precision(F) : 53)
-    ccall((:mpfr_div, :libmpfr), Int32,
-          (Ref{BigFloat}, Ref{BigFloat}, Ref{BigFloat}, Int32), q, num, den, 0)
-    return F(q)
+    iszero(u) && return zero(F)
+    num = abs(_tobigsigned(u))
+    den = big(10)^s
+    nbits = ndigits(num, base=2)
+    dbits = ndigits(den, base=2)
+    e = nbits - dbits
+    if e >= 0
+        num < den << e && (e -= 1)
+    else
+        num << -e < den && (e -= 1)
+    end
+    p = precision(F)
+    emin = exponent(floatmin(F))
+    emax = exponent(floatmax(F))
+    e > emax && return u < zero(u) ? -F(Inf) : F(Inf)
+    shift = max(e, emin) - (p - 1)
+    if shift >= 0
+        q, r = divrem(num, den << shift)
+        divisor = den << shift
+    else
+        q, r = divrem(num << -shift, den)
+        divisor = den
+    end
+    complement = divisor - r
+    (r > complement || (r == complement && isodd(q))) && (q += 1)
+    value = ldexp(F(q), shift)
+    return u < zero(u) ? -value : value
 end
 
 _tobigsigned(u::Integer) = big(u)

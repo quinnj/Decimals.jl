@@ -132,6 +132,10 @@ end
     end
     @test Float64(Decimal{76,40}("0.1")) === 0.1
     @test Float32(Decimal{18,2}("1.25")) === 1.25f0
+    @test reinterpret(UInt16, Float16(DecimalValue{Int64}(1760597127, 14))) == 0x0127
+    @test reinterpret(UInt32, Float32(DecimalValue{Int64}(943052102, 47))) == 0x0066b075
+    @test reinterpret(UInt64, Float64(DecimalValue{Int64}(4362848394127855029, 327))) ==
+          0x000323212e2e46fb
 end
 
 @testset "decimal<->decimal and rescale" begin
