@@ -105,6 +105,7 @@ function _fromfloat(::Type{Decimal{P, S, T}}, x::AbstractFloat,
     isfinite(x) || _throwinexact(Decimal{P, S, T}, x)
     iszero(x) && return zero(Decimal{P, S, T})
     num, pow, den = Base.decompose(x)  # x == num * 2^pow / den, den == ±1
+    num isa BigInt && return _fromfloat_big(Decimal{P, S, T}, x, mode)
     neg = (num < 0) ⊻ (den < 0)
     m = _tomag256(abs(num))
     if pow >= 0
@@ -140,7 +141,7 @@ end
     neg = (num < 0) ⊻ (den < 0)
     m = big(abs(num))
     if pow >= 0
-        mag = m << pow * big(10)^S
+        mag = (m << pow) * big(10)^S
     else
         k = -pow
         if k <= S

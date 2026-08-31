@@ -95,6 +95,13 @@ end
     @test_throws InexactError Decimal{18,2}(NaN)
     @test Decimal{18,2}(-0.0) === zero(Decimal64{2})
     @test round(Decimal{18,2}, 1.005, RoundUp) === Decimal{18,2}("1.01")
+    setprecision(BigFloat, 512) do
+        @test Decimal{18,2}(BigFloat("0.1")) === Decimal{18,2}("0.10")
+        @test round(Decimal{18,2}, -BigFloat("0.101"), RoundDown) ===
+              Decimal{18,2}("-0.11")
+        @test Decimal{18,2}(BigFloat("1e-1000")) === zero(Decimal64{2})
+        @test_throws OverflowError Decimal{18,2}(BigFloat("1e1000"))
+    end
     # exotic magnitudes round to zero / throw appropriately
     @test Decimal{18,2}(1.0e-300) === zero(Decimal64{2})
     @test_throws OverflowError Decimal{18,2}(1.0e300)
