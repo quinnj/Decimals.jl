@@ -8,5 +8,6 @@ using Test
     include("broadcast.jl")
     include("floatconv.jl")
     include("literals.jl")
+    include("ecosystem.jl")
     include("parsers.jl")
 end

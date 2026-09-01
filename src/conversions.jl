@@ -626,3 +626,19 @@ Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{Decimal{P, S, T}}) where {T1 
 end
 Base.promote_rule(::Type{DecimalValue{T}}, ::Type{BigInt}) where {T <: StorageInt} =
     DecimalValue{Int256}
+
+# ---- arbitrary-precision escape hatch ----
+
+# big(x) preserves exactness, so the arbitrary-precision form of a decimal is
+# a Rational{BigInt} (a BigFloat would re-round the fractional part in binary)
+Base.big(x::AbstractDecimal) = Rational{BigInt}(x)
+Base.big(::Type{<:AbstractDecimal}) = Rational{BigInt}
+
+# decimals are already rational: with no tolerance this is exact conversion;
+# with a tolerance, approximate through the float path like other Reals
+function Base.rationalize(::Type{T}, x::AbstractDecimal;
+                          tol::Real=zero(T)) where {T <: Integer}
+    iszero(tol) && return Rational{T}(x)
+    return rationalize(T, Float64(x); tol=tol)
+end
+Base.rationalize(x::AbstractDecimal; kwargs...) = rationalize(Int, x; kwargs...)

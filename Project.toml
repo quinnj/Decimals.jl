@@ -5,22 +5,32 @@ version = "1.0.0-DEV"
 
 [deps]
 BitIntegers = "c3b6d118-76ef-56ca-8cc7-ebb389d030a1"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [weakdeps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [extensions]
+DecimalsLinearAlgebraExt = "LinearAlgebra"
 DecimalsParsersExt = "Parsers"
+DecimalsPrintfExt = "Printf"
 
 [compat]
 BitIntegers = "0.3"
+LinearAlgebra = "1"
 Parsers = "3"
+Printf = "1"
+Random = "1"
 julia = "1.10"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [targets]
-test = ["Test", "Random", "Parsers"]
+test = ["Test", "Random", "Parsers", "LinearAlgebra", "Printf"]

@@ -18,6 +18,7 @@ include("broadcast.jl")
 include("format.jl")
 include("show.jl")
 include("literals.jl")
+include("random.jl")
 
 @static if VERSION >= v"1.11"
     eval(Expr(:public, :unscaled, :scale, :AbstractDecimal,
