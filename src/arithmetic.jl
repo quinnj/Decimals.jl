@@ -21,8 +21,14 @@ end
     return r, ((x >= 0) != (y >= 0)) & ((r >= 0) != (x >= 0))
 end
 
+# error messages are built from Strings only: varargs `string` over mixed
+# types (and show_default on RoundingMode) is dynamic under juliac --trim
+@inline _opstr(x::AbstractDecimal) = string(x)
+@inline _opstr(::RoundingMode{M}) where {M} = String(M)
+@inline _opstr(x) = string(x)  # BigInt operands (cold, never in trimmed paths)
 @noinline _throwop(op, x, y) =
-    throw(OverflowError(string(op, "(", x, ", ", y, ") overflows result type")))
+    throw(OverflowError(String(op) * "(" * _opstr(x) * ", " * _opstr(y) *
+                        ") overflows result type"))
 
 for (op, kernel) in ((:+, :_add_ovf), (:-, :_sub_ovf))
     @eval begin

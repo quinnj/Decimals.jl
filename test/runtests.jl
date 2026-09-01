@@ -10,4 +10,5 @@ using Test
     include("literals.jl")
     include("ecosystem.jl")
     include("parsers.jl")
+    include("trim_compile_tests.jl")
 end
