@@ -542,3 +542,12 @@ divide(x::Decimal, y::DecimalValue, mode::RoundingMode=RoundNearest) =
     divide(promote(x, y)..., mode)
 divide(x::DecimalValue, y::Decimal, mode::RoundingMode=RoundNearest) =
     divide(promote(x, y)..., mode)
+
+# ---- Base.Checked aliases ----
+# Arithmetic is already checked (throws on overflow); the explicit names let
+# generic checked-arithmetic code find these types.
+Base.Checked.checked_add(x::AbstractDecimal, y::AbstractDecimal) = x + y
+Base.Checked.checked_sub(x::AbstractDecimal, y::AbstractDecimal) = x - y
+Base.Checked.checked_mul(x::AbstractDecimal, y::AbstractDecimal) = x * y
+Base.Checked.checked_neg(x::AbstractDecimal) = -x
+Base.Checked.checked_abs(x::AbstractDecimal) = abs(x)
