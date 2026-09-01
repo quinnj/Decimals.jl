@@ -6,10 +6,18 @@
 module DecimalsParsersExt
 
 using Decimals
+import Parsers
+
+# The extension targets the Parsers 3 kernels. Parsers 2 can still land in
+# the same environment through packages that have not migrated yet (JSON 1.x
+# pins Parsers 1-2); in that case the extension loads as a no-op so
+# environment resolution succeeds — Base.parse/tryparse on Decimal types
+# keep working, only the Parsers.* entry points are absent.
+@static if pkgversion(Parsers) >= v"3"
+
 using Decimals: AbstractDecimal, StorageInt, _fitdecimal, _fitvalue,
                 _storagetype, _ndigits10, _scaleup
 using BitIntegers: UInt256
-import Parsers
 using Parsers: RC_OK, RC_INVALID, RC_OVERFLOW
 
 # fill in defaulted type parameters for parse targets
@@ -491,5 +499,7 @@ function Parsers.parsenext(::Type{T}, buf::AbstractVector{UInt8}, pos::Integer,
     return Parsers._runprefix((w, wi, wj) -> _parsenextdec(DT, w, wi, wj, dec, rounding),
                               b, i, j)
 end
+
+end # @static Parsers >= 3
 
 end # module
