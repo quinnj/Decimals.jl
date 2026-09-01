@@ -146,14 +146,15 @@ result must be decimal, `convert` back at the end (exact-or-throw).
   instead of the default `Float64(x)`, so all 78 possible digits print
   exactly. (DecFP shipped Float64-rounded `@printf` output for years
   before growing the same hook.)
-- **JSON** (`DecimalsJSONExt`): decimals emit as **raw exact-digit JSON
-  numbers** (the industry precedent: simplejson, PG/DuckDB JSON export;
-  the default Julia path stringifies `Float64(x)`, silently rounding
-  anything past 17 significant digits). Works on both JSON.jl lines:
-  v1's documented `JSON.tostring` hook and the 0.2x writer path.
-  *Note:* JSON.jl 1.x currently pins Parsers 1–2, so it can't coexist
-  with Parsers 3 in one environment until its compat bumps — same
-  transition wave as CSV.jl; the ext is guarded for both.
+- **JSON** (`DecimalsJSONExt`, JSON 1.x only): decimals emit as **raw
+  exact-digit JSON numbers** via the documented `JSON.tostring` hook
+  (the industry precedent: simplejson, PG/DuckDB JSON export; the
+  default Julia path stringifies `Float64(x)`, silently rounding
+  anything past 17 significant digits). Verified against JSON 1.7.1.
+  *Note:* JSON 1.x still pins Parsers 1–2, so it can't share an
+  environment with Parsers 3; Decimals' Parsers extension loads as a
+  no-op under Parsers 2 so the pairing resolves, and the in-suite JSON
+  tests (test/json.jl) activate once JSON gains Parsers 3 compat.
 - JSON3: unknown Reals stringify via Float64. Overriding needs a
   `JSON3`/`StructTypes` weakdep; deferred until someone asks (JSON.jl v1
   is the going-forward line).

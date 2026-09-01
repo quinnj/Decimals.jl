@@ -21,7 +21,7 @@ DecimalsPrintfExt = "Printf"
 
 [compat]
 BitIntegers = "0.3"
-JSON = "0.20, 0.21, 1"
+JSON = "1"
 LinearAlgebra = "1"
 Parsers = "2.7, 3"
 Printf = "1"
@@ -37,4 +37,4 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 
 [targets]
-test = ["Test", "Random", "Parsers", "LinearAlgebra", "Printf", "JSON"]
+test = ["Test", "Random", "Parsers", "LinearAlgebra", "Printf"]

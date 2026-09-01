@@ -9,6 +9,11 @@ using Test
     include("floatconv.jl")
     include("literals.jl")
     include("ecosystem.jl")
+    if Base.find_package("JSON") !== nothing
+        include("json.jl")
+    else
+        println("[suite] JSON not in test env (needs JSON with Parsers 3 compat); skipping json.jl")
+    end
     include("parsers.jl")
     include("trim_compile_tests.jl")
 end
