@@ -489,15 +489,28 @@ end
     return (v, nextpos, RC_OK)
 end
 
-function Parsers.parsenext(::Type{T}, buf::AbstractVector{UInt8}, pos::Integer,
+# Keep the rare high-index source type out of the normal specialization —
+# same reasoning as Parsers' own float parsenext: routing both source types
+# through the higher-order _runprefix seam prevents Julia from inlining the
+# short decimal path (measured ~1.9x on money-shaped tokens).
+@noinline function _parsenextdecwindow(::Type{DT}, b::B, i::Int, j::Int,
+                                       dec::UInt8, rounding::RoundingMode) where
+                                       {DT, B <: AbstractVector{UInt8}}
+    window, first, final = Parsers._indexwindow(b, i, j)
+    result = _parsenextdec(DT, window, first, final, dec, rounding)
+    return Parsers._restoreprefix(window, result)
+end
+
+@inline function Parsers.parsenext(::Type{T}, buf::AbstractVector{UInt8}, pos::Integer,
                            last::Integer; decimal::Char='.',
                            rounding::RoundingMode=RoundNearest) where {T <: _DECTARGETS}
     DT = _fullT(T)
     b, i, j = Parsers._prefixbounds(buf, pos, last)
     i > j && return (zero(DT), i, RC_INVALID)
     dec = Parsers._decimalbyte(decimal)
-    return Parsers._runprefix((w, wi, wj) -> _parsenextdec(DT, w, wi, wj, dec, rounding),
-                              b, i, j)
+    Parsers._needsindexwindow(j) &&
+        return _parsenextdecwindow(DT, b, i, j, dec, rounding)
+    return _parsenextdec(DT, b, i, j, dec, rounding)
 end
 
 end # @static Parsers >= 3
