@@ -37,6 +37,9 @@ jobs:
             version: '1'
           - os: ubuntu-latest
             arch: x64
+            version: '1.11'
+          - os: ubuntu-latest
+            arch: x64
             version: 'pre'
     env:
       # the juliac --trim workload is exercised by the dedicated job below
