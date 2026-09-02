@@ -395,7 +395,7 @@ end
 # (dims, init) take the generic element-wise path
 for (f, op) in ((:maximum, :max), (:minimum, :min))
     @eval function Base.$f(v::Array{Decimal{P, S, T}}; kw...) where {P, S, T <: StorageInt}
-        isempty(kw) || return Base.mapreduce(identity, $op, v; kw...)
+        (isempty(kw) && !isempty(v)) || return Base.mapreduce(identity, $op, v; kw...)
         return reinterpret(Decimal{P, S, T}, $f(reinterpret(T, v)))
     end
 end
