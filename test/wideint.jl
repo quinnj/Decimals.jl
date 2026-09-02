@@ -45,6 +45,15 @@ using Decimals: Int256, UInt256
     @test_throws InexactError UInt256(-1)
     @test_throws InexactError Int64(Int256(2)^70)
     @test_throws InexactError UInt8(UInt256(256))
+    # signed wide -> unsigned machine: the full unsigned range, not the signed one
+    @test UInt8(Int256(157)) === 0x9d && UInt8(Int256(255)) === 0xff
+    @test UInt64(Int256(typemax(UInt64))) === typemax(UInt64) && UInt128(Int256(2)^127) === UInt128(2)^127
+    @test_throws InexactError UInt8(Int256(256))
+    @test_throws InexactError UInt8(Int256(-1))
+    @test_throws InexactError UInt128(Int256(2)^128)
+    @test Int8(Int256(-128)) === Int8(-128) && Int8(UInt256(127)) === Int8(127)
+    @test_throws InexactError Int8(Int256(128))
+    @test_throws InexactError Int8(UInt256(128))
     @test (UInt256(2)^70 + UInt256(5)) % UInt64 === UInt64(5)
     @test (-Int256(1)) % UInt64 === typemax(UInt64) && (Int256(-1)) % UInt256 === typemax(UInt256)
     @test Int8(-3) % UInt256 === typemax(UInt256) - UInt256(2)

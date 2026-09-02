@@ -57,7 +57,12 @@ end
 
 for T in Base.BitInteger_types
     @eval begin
-        @inline (::Type{$T})(x::Int256) = checked_trunc_sint($T, x)
+        @inline function (::Type{$T})(x::Int256)
+            $(T <: Signed) && return checked_trunc_sint($T, x)
+            (x < zero(Int256) || x > bitcast(Int256, zext_int(UInt256, typemax($T)))) &&
+                throw(InexactError($(QuoteNode(Symbol(T))), $T, x))
+            return trunc_int($T, x)
+        end
         @inline function (::Type{$T})(x::UInt256)
             x > zext_int(UInt256, typemax($T)) && throw(InexactError($(QuoteNode(Symbol(T))), $T, x))
             return trunc_int($T, x) % $T
