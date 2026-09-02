@@ -39,7 +39,7 @@ The full API diff, including three bugs found in 0.5.1 while auditing it, is in
 - `round(x; digits)`.
 - `zero`, `one`, `abs`, unary `-`, `signbit`, `iszero`, `isfinite`, `isnan`.
 - `dec"..."` literals, including `_` digit separators.
-- `normalize` for stripping trailing zeros.
+- `Decimals.normalize` for stripping trailing zeros.
 - Scientific-notation display for extreme exponents (past 44 characters of
   positional form).
 

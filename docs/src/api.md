@@ -27,7 +27,7 @@ Decimal256
 ```@docs
 rescale
 divide
-normalize
+Decimals.normalize
 ```
 
 ## Wire and byte-level API

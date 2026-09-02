@@ -3,7 +3,7 @@ module Decimals
 using BitIntegers: BitIntegers, Int256, UInt256
 
 export Decimal, DecimalValue, Decimal32, Decimal64, Decimal128, Decimal256,
-       rescale, divide, normalize, @dec_str
+       rescale, divide, @dec_str
 
 include("tables.jl")
 include("limbs.jl")
@@ -21,7 +21,7 @@ include("literals.jl")
 include("random.jl")
 
 @static if VERSION >= v"1.11"
-    eval(Expr(:public, :unscaled, :scale, :AbstractDecimal,
+    eval(Expr(:public, :normalize, :unscaled, :scale, :AbstractDecimal,
               :writedecimal!, :decimallength))
 end
 

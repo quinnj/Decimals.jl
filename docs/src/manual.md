@@ -32,7 +32,7 @@ whenever you leave it off.
 the scale (an `Int32` in `0:16383`) alongside the coefficient. Use it when the
 scale travels with each value rather than with the column — a PostgreSQL
 `numeric`'s per-value `dscale`, a value whose scale is not known until runtime,
-or the result of [`normalize`](@ref). It is still isbits, but it is a word
+or the result of [`Decimals.normalize`](@ref). It is still isbits, but it is a word
 wider and its arithmetic has to align scales at run time, so for columnar data
 `Decimal{P,S}` is the right default.
 
@@ -229,14 +229,14 @@ that `string` is built on; it bounds-checks nothing, so reserve
 `reinterpret`, this is enough to read and write decimal columns without ever
 materialising an intermediate `String`.
 
-[`normalize`](@ref) is the other representation-level tool: it strips trailing
+[`Decimals.normalize`](@ref) is the other representation-level tool: it strips trailing
 zeros from the coefficient and lowers the scale to match, returning a
 `DecimalValue` (the scale is now a property of the value, not the type). The
 number is unchanged; only the digits a wire format would carry are.
 
 !!! note
-    `normalize` collides with `LinearAlgebra.normalize` when both packages are
-    in scope. Qualify it as `Decimals.normalize` there.
+    `normalize` is public but deliberately not exported, so it never collides
+    with `LinearAlgebra.normalize`; call it as `Decimals.normalize`.
 
 ## Extensions
 

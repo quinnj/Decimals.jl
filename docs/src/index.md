@@ -52,7 +52,7 @@ round(Decimal64{4}("1.2346"); digits=2)                       # 1.2300
 # DecimalValue carries its scale per value (a PostgreSQL numeric's dscale)
 DecimalValue(12345, 3)                 # 12.345
 rescale(DecimalValue(12345, 3), 1)     # 12.3
-normalize(dec"1.2000")                 # 1.2 :: DecimalValue{Int32}
+Decimals.normalize(dec"1.2000")        # 1.2 :: DecimalValue{Int32}
 
 # Printing and reading back
 string(Decimal64{2}("-12.30"))         # "-12.30" — always positional, never 1.2e1

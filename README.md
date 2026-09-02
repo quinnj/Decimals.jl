@@ -52,7 +52,7 @@ round(Decimal64{4}("1.2346"); digits=2)                       # 1.2300
 # DecimalValue carries its scale per value (a PostgreSQL numeric's dscale)
 DecimalValue(12345, 3)                 # 12.345
 rescale(DecimalValue(12345, 3), 1)     # 12.3
-normalize(dec"1.2000")                 # 1.2 :: DecimalValue{Int32}
+Decimals.normalize(dec"1.2000")        # 1.2 :: DecimalValue{Int32}
 
 # Printing and reading back
 string(Decimal64{2}("-12.30"))         # "-12.30" — always positional, never 1.2e1
@@ -73,11 +73,11 @@ At the REPL a decimal displays as plain digits (`1234.56`); `repr` and `show`
 give the round-trippable typed form, `Decimal{18,2,Int64}("1234.56")`.
 
 Exported names are `Decimal`, `DecimalValue`, `Decimal32`, `Decimal64`,
-`Decimal128`, `Decimal256`, `rescale`, `divide`, `normalize`, and `@dec_str`.
-`Decimals.unscaled`, `Decimals.scale`, `Decimals.writedecimal!`,
-`Decimals.decimallength`, and `Decimals.AbstractDecimal` are public but not
-exported. Note that `normalize` collides with `LinearAlgebra.normalize` when
-both packages are in scope — qualify it as `Decimals.normalize` there.
+`Decimal128`, `Decimal256`, `rescale`, `divide`, and `@dec_str`.
+`Decimals.normalize`, `Decimals.unscaled`, `Decimals.scale`,
+`Decimals.writedecimal!`, `Decimals.decimallength`, and
+`Decimals.AbstractDecimal` are public but not exported (`normalize` stays
+qualified so it never collides with `LinearAlgebra.normalize`).
 
 ## Types
 
@@ -101,7 +101,7 @@ maximum; the storage type is filled in from `P`. `Decimal{9,2}` and
 `DecimalValue{T}` is the runtime-scale sibling: it stores the scale (an
 `Int32`, `0:16383`) alongside the coefficient, for row-oriented wire values
 whose scale travels with each value — a PostgreSQL `numeric` `dscale`, or the
-output of `normalize`. It is still isbits, but prefer `Decimal{P,S}` for
+output of `Decimals.normalize`. It is still isbits, but prefer `Decimal{P,S}` for
 columnar data, where the scale is a schema fact and belongs in the type.
 
 Both are `<: Decimals.AbstractDecimal <: Real`. There is deliberately no
@@ -199,7 +199,7 @@ want. The full API diff, including bugs found in 0.5.1 while auditing, is in
 **Keeps working unchanged.** The name `Decimal`; `==`, `<`, and `hash` by
 numeric value; `parse`/`string` round-trips for ordinary values;
 `round(x; digits)`; `zero`, `one`, `abs`, `signbit`, `iszero`; `dec"..."`
-literals; `normalize`; scientific-notation display for extreme exponents.
+literals; `Decimals.normalize`; scientific-notation display for extreme exponents.
 
 **Needs a change.**
 

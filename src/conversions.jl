@@ -440,6 +440,9 @@ function _tointeger(::Type{I}, x::AbstractDecimal, mode) where {I}
 end
 
 (::Type{I})(x::AbstractDecimal) where {I <: Integer} = _tointeger(I, x, nothing)
+# the abstract target yields the storage tier's machine integer, not Int256
+Base.Integer(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = _tointeger(T, x, nothing)
+Base.Integer(x::DecimalValue{T}) where {T <: StorageInt} = _tointeger(T, x, nothing)
 Base.Bool(x::AbstractDecimal) = _tointeger(Bool, x, nothing)
 Base.round(::Type{I}, x::AbstractDecimal,
            mode::RoundingMode=RoundNearest) where {I <: Integer} =
