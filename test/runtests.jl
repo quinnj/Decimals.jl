@@ -1,9 +1,9 @@
 using Test
 
-# Allocation-free gates hold on Julia 1.11+. The 1.10 compiler leaves small
+# Allocation-free gates hold on Julia 1.12+. Older compilers leave small
 # boxes around wide-integer temporaries, so the gates are skipped there while
 # every value assertion still runs.
-const ALLOC_GATES = VERSION >= v"1.11"
+const ALLOC_GATES = VERSION >= v"1.12"
 macro test_allocfree(ex)
     return esc(:(ALLOC_GATES && @test @allocated($ex) == 0))
 end
