@@ -101,3 +101,15 @@ end
     hi, _ = _mul256full(a, b)
     return hi
 end
+
+
+# x * m for a limb-sized multiplier whose product is known to fit 256 bits:
+# four 64x64 products with a carry chain instead of a full 256x256 multiply
+@inline function _mul256x64(x::UInt256, m::UInt64)
+    p0 = widemul(x % UInt64, m)
+    p1 = widemul((x >> 64) % UInt64, m) + (p0 >> 64)
+    p2 = widemul((x >> 128) % UInt64, m) + (p1 >> 64)
+    p3 = widemul((x >> 192) % UInt64, m) + (p2 >> 64)
+    return UInt256(p0 % UInt64) | (UInt256(p1 % UInt64) << 64) |
+           (UInt256(p2 % UInt64) << 128) | (UInt256(p3 % UInt64) << 192)
+end

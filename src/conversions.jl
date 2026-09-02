@@ -616,6 +616,16 @@ _tobigsigned(u::Integer) = big(u)
 _tobigsigned(u::Int256) = (n = _tobig(_mag(u)); u < 0 ? -n : n)
 
 Base.Float64(x::AbstractDecimal) = _tofloat(Float64, x.unscaled, scale(x))
+# up to 15 digits every coefficient is an exact Float64, so the divide alone
+# is the correctly rounded conversion — no magnitude test, fully inlinable
+@inline function Base.Float64(x::Decimal{P, S, T}) where {P, S, T <: Union{Int32, Int64}}
+    S <= 22 || return _tofloat(Float64, x.unscaled, S)
+    u = x.unscaled
+    if P <= 15 || (-9007199254740992 <= u <= 9007199254740992)
+        return Float64(u) / @inbounds(_FPOW10[S + 1])
+    end
+    return _tofloat(Float64, u, S)
+end
 Base.Float32(x::AbstractDecimal) = _tofloat(Float32, x.unscaled, scale(x))
 Base.Float16(x::AbstractDecimal) = _tofloat(Float16, x.unscaled, scale(x))
 Base.AbstractFloat(x::AbstractDecimal) = Float64(x)

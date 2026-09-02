@@ -30,9 +30,25 @@ end
     throw(OverflowError(String(op) * "(" * _opstr(x) * ", " * _opstr(y) *
                         ") overflows result type"))
 
+# When 2*maxmag fits the storage type (every tier but full-width Int128),
+# |x|,|y| <= maxmag means x ± y cannot wrap, so the only check is the range
+# one: (r + maxmag) as unsigned exceeds 2*maxmag exactly when |r| > maxmag —
+# one add and one compare, no abs, no overflow flag.
+@inline _wrapfree(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
+    _maxmag(Decimal{P, S, T}) <= typemax(T) ÷ 3
+@inline function _outofrange(r::T, ::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt}
+    mm = _maxmag(Decimal{P, S, T}) % _utype(T)
+    return (r % _utype(T)) + mm > mm + mm
+end
+
 for (op, kernel) in ((:+, :_add_ovf), (:-, :_sub_ovf))
     @eval begin
         @inline function Base.$op(x::Decimal{P, S, T}, y::Decimal{P, S, T}) where {P, S, T <: StorageInt}
+            if _wrapfree(Decimal{P, S, T})
+                r = $op(x.unscaled, y.unscaled)
+                _outofrange(r, Decimal{P, S, T}) && _throwop($(QuoteNode(op)), x, y)
+                return reinterpret(Decimal{P, S, T}, r)
+            end
             u, ovf = $kernel(x.unscaled, y.unscaled)
             (ovf || _mag(u) > _maxmag(Decimal{P, S, T})) && _throwop($(QuoteNode(op)), x, y)
             return reinterpret(Decimal{P, S, T}, u)

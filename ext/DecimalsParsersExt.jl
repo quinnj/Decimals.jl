@@ -16,7 +16,7 @@ import Parsers
 @static if pkgversion(Parsers) >= v"3"
 
 using Decimals: AbstractDecimal, StorageInt, _fitdecimal, _fitvalue,
-                _storagetype, _ndigits10, _scaleup, _scantiny
+                _storagetype, _ndigits10, _scaleup, _scantiny, _mul256x64, _upow10
 using BitIntegers: UInt256
 using Parsers: RC_OK, RC_INVALID, RC_OVERFLOW
 
@@ -55,8 +55,8 @@ _fullT(::Type{DecimalValue}) = DecimalValue{Int64}
             m128 = (mag % UInt128) * Decimals._upow10(UInt128, n) + UInt128(chunk)
             mag = UInt256(m128)
         else
-            mag, _ = _scaleup(mag, n)  # cannot overflow: nd + n <= 77
-            mag += UInt256(chunk)
+            # cannot overflow: nd + n <= 77 digits; 10^n fits a limb (n <= 19)
+            mag = _mul256x64(mag, _upow10(UInt64, n)) + UInt256(chunk)
         end
         nd = nd == 0 ? (mag == zero(UInt256) ? 0 : _ndigits10(mag)) : nd + n
         k += n
@@ -307,9 +307,11 @@ end
         # UInt64 scan and go straight to the 38-digit block scanner (which
         # itself defers to the wide scanner when needed)
         i2, j2 = Parsers._stripws(buf, i, j)
-        return _parsewholewide(DT, buf, i, j, i2, j2, dec, mode, Val(Throw))
+        return _parsewholewide(DT, buf, i, j, i2, j2, dec, mode, Val(Throw), Val(false))
     end
-    return _parsegeneral(DT, buf, i, j, dec, mode, Val(Throw))
+    # longer tokens have > 38 digits almost surely: skip the block scanner too
+    i2, j2 = Parsers._stripws(buf, i, j)
+    return _parsewholewide(DT, buf, i, j, i2, j2, dec, mode, Val(Throw), Val(true))
 end
 
 @noinline function _parsegeneral(::Type{DT}, buf::AbstractVector{UInt8},
@@ -333,11 +335,18 @@ end
     return _parsewholewide(DT, buf, orig_i, orig_j, i, j, dec, mode, Val(Throw))
 end
 
+_parsewholewide(::Type{DT}, buf::AbstractVector{UInt8}, orig_i::Int, orig_j::Int,
+                i::Int, j::Int, dec::UInt8, mode::RoundingMode,
+                throw::Val) where {DT} =
+    _parsewholewide(DT, buf, orig_i, orig_j, i, j, dec, mode, throw, Val(false))
+
+# Skip128 = true bypasses the 38-digit block scanner (long tokens)
 @noinline function _parsewholewide(::Type{DT}, buf::AbstractVector{UInt8},
                                    orig_i::Int, orig_j::Int, i::Int, j::Int,
                                    dec::UInt8, mode::RoundingMode,
-                                   ::Val{Throw}) where {DT, Throw}
-    m128, sc, neg, nextpos, ok, needwide = _scandec128(buf, i, j, dec)
+                                   ::Val{Throw}, ::Val{Skip128}) where {DT, Throw, Skip128}
+    m128, sc, neg, nextpos, ok, needwide = Skip128 ?
+        (zero(UInt128), 0, false, i, false, true) : _scandec128(buf, i, j, dec)
     if !needwide
         if !(ok && nextpos > j)
             Throw && _throwinvalid(DT, buf, orig_i, orig_j)

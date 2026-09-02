@@ -17,13 +17,22 @@ function _bcaddsub(a::Vector{Decimal{P, S, T}}, b::Vector{Decimal{P, S, T}},
     dest = Vector{Decimal{P, S, T}}(undef, n)
     mm = _maxmag(Decimal{P, S, T}) % T
     bad = false
-    @inbounds @simd for i in 1:n
-        x = a[i].unscaled
-        y = b[i].unscaled
-        r = sub ? x - y : x + y
-        ovf = sub ? ((x ⊻ y) & (x ⊻ r)) < zero(T) : ((x ⊻ r) & (y ⊻ r)) < zero(T)
-        bad |= ovf | (r > mm) | (r < -mm)
-        dest[i] = reinterpret(Decimal{P, S, T}, r)
+    if _wrapfree(Decimal{P, S, T})
+        # no wrap possible (see _wrapfree): one unsigned range test per lane
+        @inbounds @simd for i in 1:n
+            r = sub ? a[i].unscaled - b[i].unscaled : a[i].unscaled + b[i].unscaled
+            bad |= _outofrange(r, Decimal{P, S, T})
+            dest[i] = reinterpret(Decimal{P, S, T}, r)
+        end
+    else
+        @inbounds @simd for i in 1:n
+            x = a[i].unscaled
+            y = b[i].unscaled
+            r = sub ? x - y : x + y
+            ovf = sub ? ((x ⊻ y) & (x ⊻ r)) < zero(T) : ((x ⊻ r) & (y ⊻ r)) < zero(T)
+            bad |= ovf | (r > mm) | (r < -mm)
+            dest[i] = reinterpret(Decimal{P, S, T}, r)
+        end
     end
     bad && _throwbcoverflow(sub ? :- : :+)
     return dest
@@ -115,4 +124,40 @@ for (op, subval) in ((:+, false), (:-, true))
             return invoke(Base.copy, Tuple{Broadcasted}, bc)
         return _bcaddsubmix(a, b, Val($subval))
     end
+end
+
+# Float64 conversion over a column: every |unscaled| <= 2^53 converts exactly
+# and the division by 10^S (S <= 22, exact) rounds correctly, so the loop is
+# a plain convert-and-divide that vectorizes; the rare wider elements are
+# recomputed afterwards through the exact scalar path.
+const _F64EXACT = 9007199254740992  # 2^53
+function _tofloat64vec(v::AbstractVector{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}}
+    n = length(v)
+    dest = Vector{Float64}(undef, n)
+    p = @inbounds _FPOW10[S + 1]
+    bad = false
+    @inbounds @simd for i in eachindex(v)
+        u = v[i].unscaled
+        bad |= (u > _F64EXACT) | (u < -_F64EXACT)
+        dest[i] = Float64(u) / p
+    end
+    if bad
+        @inbounds for i in eachindex(v)
+            u = v[i].unscaled
+            (u > _F64EXACT || u < -_F64EXACT) && (dest[i] = _tofloat(Float64, u, S))
+        end
+    end
+    return dest
+end
+
+for f in (:(Type{Float64}), :(typeof(float)))
+    @eval function Base.copy(bc::Broadcasted{DefaultArrayStyle{1}, <:Any, $f,
+                             Tuple{Vector{Decimal{P, S, T}}}}) where {P, S, T <: Union{Int32, Int64}}
+        S <= 22 || return invoke(Base.copy, Tuple{Broadcasted}, bc)
+        return _tofloat64vec(bc.args[1])
+    end
+end
+function Base.map(::Type{Float64}, v::Vector{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}}
+    S <= 22 || return invoke(Base.map, Tuple{Any, AbstractArray}, Float64, v)
+    return _tofloat64vec(v)
 end

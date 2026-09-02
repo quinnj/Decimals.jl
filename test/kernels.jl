@@ -252,3 +252,15 @@ end
         @test D._tobig(r) == rb
     end
 end
+
+@testset "_mul256x64 agrees with the full multiply" begin
+    rng = Xoshiro(11)
+    for _ in 1:20000
+        # keep the product inside 256 bits: top limb below 2^44, multiplier < 2^20..2^64 mixed
+        x = UInt256(rand(rng, UInt64)) | (UInt256(rand(rng, UInt64)) << 64) |
+            (UInt256(rand(rng, UInt64)) << 128) | (UInt256(rand(rng, UInt64) >> 20) << 192)
+        m = rand(rng, (UInt64(10)^19, UInt64(10)^7, rand(rng, UInt64) >> 44, UInt64(1), typemax(UInt64) >> 44))
+        @test D._mul256x64(x, m) == x * UInt256(m)
+    end
+    @test D._mul256x64(typemax(UInt256) >> 64, UInt64(10)^19) == (typemax(UInt256) >> 64) * UInt256(10)^19
+end
