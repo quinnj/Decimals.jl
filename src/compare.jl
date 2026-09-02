@@ -75,10 +75,63 @@ Base.:(<)(x::Rational, y::AbstractDecimal) = _cmprational(y, x) > 0
 
 # ---- vs AbstractFloat ----
 
-# exact compare via 2/5-power cross-multiply in BigInt (cold path for now)
+# Float64(x) is correctly rounded and therefore monotone, so a strict
+# inequality between it and y decides the comparison outright; only an equal
+# image needs the exact tie-break, which classifies |y| at x's scale with
+# integer arithmetic (floor plus an inexact flag). Other float types take the
+# BigInt cross-multiply.
 function _cmpfloat(x::AbstractDecimal, y::AbstractFloat)
     isnan(y) && return 2  # sentinel: unordered
     isinf(y) && return y > 0 ? -1 : 1
+    y isa Union{Float16, Float32, Float64} || return _cmpfloatbig(x, y)
+    yf = Float64(y)
+    fx = Float64(x)
+    fx < yf && return -1
+    fx > yf && return 1
+    return _cmpfloattie(x, yf)
+end
+
+function _cmpfloattie(x::AbstractDecimal, y::Float64)
+    xneg = _isneg(x)
+    if iszero(y)
+        iszero(x) && return 0
+        return xneg ? -1 : 1
+    end
+    num, pow, _ = Base.decompose(y)
+    mag, inexact, status = _floatmagatscale(UInt64(abs(num)), pow, scale(x))
+    status == 2 && return _cmpfloatbig(x, y)
+    # status 1: |y| exceeds every coefficient at this scale
+    c = status == 1 ? -1 :
+        (u = _tomag256(x.unscaled); u < mag ? -1 : u > mag ? 1 : (inexact ? -1 : 0))
+    return xneg ? -c : c
+end
+
+# |y| = m*2^pow at scale s: (floor(|y|*10^s), inexact, status) with status
+# 0 ok, 1 = |y|*10^s >= 2^256, 2 = extreme exponent, use the BigInt path
+@inline function _floatmagatscale(m::UInt64, pow::Int, s::Int)
+    m256 = UInt256(m)
+    if pow >= 0
+        (pow > 255 || pow > leading_zeros(m256)) && return (zero(UInt256), false, 1)
+        mag, ovf = _scaleup(m256 << pow, s)
+        return (mag, false, ovf ? 1 : 0)
+    end
+    k = -pow
+    if k <= s
+        k > 110 && return (zero(UInt256), false, 2)
+        hi, lo = _mul256full(m256, _upow5_256(k))
+        hi != zero(UInt256) && return (zero(UInt256), false, 1)
+        mag, ovf = _scaleup(lo, s - k)
+        return (mag, false, ovf ? 1 : 0)
+    end
+    k > 87 && return (zero(UInt256), false, 2)
+    hi, lo = _mul256full(m256, _upow5_256(k))
+    hi != zero(UInt256) && return (zero(UInt256), false, 2)
+    q, inexact = _scaledown(lo, k - s, false, RoundToZero)
+    return (q, inexact, 0)
+end
+
+# exact compare via 2/5-power cross-multiply in BigInt (cold path)
+function _cmpfloatbig(x::AbstractDecimal, y::AbstractFloat)
     num, pow, den = Base.decompose(y)
     yneg = (num < 0) ⊻ (den < 0)
     xneg = _isneg(x)

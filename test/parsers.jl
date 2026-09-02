@@ -125,8 +125,8 @@ using Test, Random
         buf = codeunits("12.5,abc")
         pn(b) = Parsers.parsenext(Decimal64{2}, b, 1, length(b))
         pf("123.45"); pt("123.456789"); pn(buf)
-        @test @allocated(pf("123.45")) == 0
-        @test @allocated(pt("123.456789")) == 0
-        @test @allocated(pn(buf)) == 0
+        @test_allocfree pf("123.45")
+        @test_allocfree pt("123.456789")
+        @test_allocfree pn(buf)
     end
 end

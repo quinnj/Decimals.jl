@@ -68,8 +68,11 @@ end
 """
     Decimals.decimallength(x) -> Int
 
-Number of bytes `writedecimal!` produces for `x` (sign, digits, and decimal
-point included).
+Number of bytes [`writedecimal!`](@ref Decimals.writedecimal!) produces for
+`x` (sign, digits, and decimal point included) — equivalently
+`ncodeunits(string(x))`. Computed from the coefficient's digit count and the
+scale, without formatting anything, so it is the size to reserve before
+writing.
 """
 function decimallength(x::AbstractDecimal)
     m = _mag(x)
@@ -82,9 +85,25 @@ end
 """
     Decimals.writedecimal!(buf, pos, x) -> Int
 
-Write the plain decimal form of `x` into `buf` starting at `pos`; returns the
-first position after the written bytes. The caller must ensure
-`decimallength(x)` bytes of room.
+Write the plain decimal form of `x` into the byte buffer `buf` starting at
+`pos`; returns the first position after the written bytes. The caller must
+ensure [`decimallength(x)`](@ref Decimals.decimallength) bytes of room —
+nothing is bounds-checked or grown.
+
+The output is always the positional form (`-1234.56`, `0.0005`), never
+scientific notation, so it is directly usable as a MySQL parameter, a CSV
+field, or a JSON number. This is the allocation-free counterpart to
+`string(x)`, which is implemented on top of it.
+
+```jldoctest
+julia> buf = zeros(UInt8, 16);
+
+julia> n = Decimals.writedecimal!(buf, 1, Decimal64{2}("-1.25"))
+6
+
+julia> String(buf[1:n-1])
+"-1.25"
+```
 """
 function writedecimal!(buf::AbstractVector{UInt8}, pos::Int, x::AbstractDecimal)
     m = _mag(x)

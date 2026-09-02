@@ -309,3 +309,12 @@ end
     @test DecimalValue{Int128}(1, 2) + UInt128(1) === DecimalValue{Int256}(101, 2)
     @test UInt128(1) + DecimalValue{Int128}(1, 2) === DecimalValue{Int256}(101, 2)
 end
+
+@testset "Integer(x) yields the storage tier's machine integer" begin
+    @test Integer(Decimal64{2}("3.00")) === Int64(3)
+    @test Integer(Decimal32{1}("-7.0")) === Int32(-7)
+    @test Integer(Decimal{38,9,Int128}("12.000000000")) === Int128(12)
+    @test Integer(DecimalValue{Int32}(300, 2)) === Int32(3)
+    @test_throws InexactError Integer(Decimal64{2}("3.50"))
+    @test Int(Decimal64{2}("3.00")) === 3
+end

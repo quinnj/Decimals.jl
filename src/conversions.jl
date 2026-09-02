@@ -107,6 +107,9 @@ function _fromfloat(::Type{Decimal{P, S, T}}, x::AbstractFloat,
     num, pow, den = Base.decompose(x)  # x == num * 2^pow / den, den == ±1
     num isa BigInt && return _fromfloat_big(Decimal{P, S, T}, x, mode)
     neg = (num < 0) ⊻ (den < 0)
+    if x isa Union{Float16, Float32, Float64} && sizeof(T) <= 16 && S <= 22 && pow < 0
+        return _fromfloat128(Decimal{P, S, T}, UInt128(abs(num)), -pow, neg, x, mode)
+    end
     m = _tomag256(abs(num))
     if pow >= 0
         pow > 255 && _throwoverflow(Decimal{P, S, T}, x)
@@ -133,6 +136,27 @@ function _fromfloat(::Type{Decimal{P, S, T}}, x::AbstractFloat,
     hi != zero(UInt256) && _throwoverflow(Decimal{P, S, T}, x)
     q, _ = _scaledown(lo, k - S, neg, mode)
     return _fromuval(Decimal{P, S, T}, q, neg, x)
+end
+
+# Machine floats below 2^53 at scale <= 22 stay in UInt128 arithmetic:
+# |x| = m*2^-k with m < 2^53, so u = round(m*10^S / 2^k) has m*10^S < 2^127
+# and the k dropped low bits decide the rounding exactly.
+@inline function _fromfloat128(::Type{Decimal{P, S, T}}, m::UInt128, k::Int,
+                               neg::Bool, x, mode::RoundingMode) where {P, S, T <: StorageInt}
+    p = m * _upow10(UInt128, S)
+    if k >= 128
+        q = zero(UInt128)
+        inc = _roundinc(true, false, false, neg, mode)
+    else
+        q = p >> k
+        r = p & ((one(UInt128) << k) - one(UInt128))
+        half = one(UInt128) << (k - 1)
+        inc = r != zero(UInt128) && _roundinc(r < half, r == half, isodd(q), neg, mode)
+    end
+    inc && (q += one(UInt128))
+    q > UInt128(_maxmag(Decimal{P, S, T})) && _throwoverflow(Decimal{P, S, T}, x)
+    u = (q % _utype(T)) % T
+    return reinterpret(Decimal{P, S, T}, neg ? -u : u)
 end
 
 @noinline function _fromfloat_big(::Type{Decimal{P, S, T}}, x::AbstractFloat,
@@ -380,11 +404,30 @@ _round(::Type{Decimal{P, S, T}}, x::DecimalValue, mode::RoundingMode) where {P, 
     _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), mode, x)
 
 """
-    rescale(D, x, mode=RoundNearest)
+    rescale(D::Type{<:Decimal}, x, mode=RoundNearest) -> D
+    rescale(x::DecimalValue, s::Integer, mode=RoundNearest) -> DecimalValue
 
-Convert a decimal to the target decimal type `D`, rounding with `mode` when
-the target scale cannot represent `x` exactly. `convert`/constructors are the
-exact-or-throw counterpart.
+Move a decimal to another scale, rounding with `mode` when the target scale
+cannot hold `x` exactly. The first form targets a `Decimal` type `D` (whose
+scale is a type parameter); the second re-scales a [`DecimalValue`](@ref) in
+place to the runtime scale `s`, which must be in `0:16383`.
+
+`mode` is any of `RoundNearest` (half-even, the default),
+`RoundNearestTiesAway`, `RoundNearestTiesUp`, `RoundToZero`, `RoundFromZero`,
+`RoundDown`, `RoundUp`. Rounding *up* in scale is always exact, so `mode` only
+matters when digits are dropped; overflowing the target's precision still
+throws `OverflowError`.
+
+`convert`/constructors are the exact-or-throw counterpart, and
+`round(D, x, mode)` is the same operation spelled Base's way.
+
+```jldoctest
+julia> rescale(Decimal64{2}, Decimal64{4}("1.2356"), RoundUp)
+1.24
+
+julia> rescale(DecimalValue(12345, 3), 1)
+12.3
+```
 """
 rescale(::Type{DT}, x::AbstractDecimal,
         mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
@@ -421,6 +464,9 @@ function _tointeger(::Type{I}, x::AbstractDecimal, mode) where {I}
 end
 
 (::Type{I})(x::AbstractDecimal) where {I <: Integer} = _tointeger(I, x, nothing)
+# the abstract target yields the storage tier's machine integer, not Int256
+Base.Integer(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = _tointeger(T, x, nothing)
+Base.Integer(x::DecimalValue{T}) where {T <: StorageInt} = _tointeger(T, x, nothing)
 Base.Bool(x::AbstractDecimal) = _tointeger(Bool, x, nothing)
 Base.round(::Type{I}, x::AbstractDecimal,
            mode::RoundingMode=RoundNearest) where {I <: Integer} =

@@ -16,7 +16,7 @@ import Parsers
 @static if pkgversion(Parsers) >= v"3"
 
 using Decimals: AbstractDecimal, StorageInt, _fitdecimal, _fitvalue,
-                _storagetype, _ndigits10, _scaleup
+                _storagetype, _ndigits10, _scaleup, _scantiny
 using BitIntegers: UInt256
 using Parsers: RC_OK, RC_INVALID, RC_OVERFLOW
 
@@ -80,45 +80,6 @@ end
         ev = min(ev * 10 + Int(buf[p] - UInt8('0')), 1_000_000)
     end
     return (eneg ? ev : -ev, e3)
-end
-
-# Per-byte whole-token parse for spans of 1..16 bytes: [+-]digits[.digits],
-# two tight loops (integer run, then fraction run) so no per-digit scale
-# bookkeeping. Anything else — exponents, weird bytes, leftovers — defers to
-# the general scanner, which also owns rejecting genuinely invalid input.
-# The branchy per-byte form beats wide SWAR here: short varied tokens keep
-# these branches well-predicted, and there is no clamped-gather tail.
-# Returns (m, sc, neg, handled).
-@inline function _scantiny(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
-    @inbounds begin
-        b = buf[i]
-        neg = b == UInt8('-')
-        i += Int(neg | (b == UInt8('+')))
-        m = UInt64(0)
-        ndig = 0
-        while i <= j
-            d = buf[i] - UInt8('0')
-            d > 0x09 && break
-            m = m * UInt64(10) + d
-            ndig += 1
-            i += 1
-        end
-        sc = 0
-        if i <= j && buf[i] == dec
-            i += 1
-            fs = i
-            while i <= j
-                d = buf[i] - UInt8('0')
-                d > 0x09 && break
-                m = m * UInt64(10) + d
-                i += 1
-            end
-            sc = i - fs
-            ndig += sc
-        end
-        (i <= j || ndig == 0) && return (UInt64(0), 0, neg, false)
-        return (m, sc, neg, true)
-    end
 end
 
 # skip a run of ASCII zeros, SWAR-wide then per byte

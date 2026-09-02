@@ -55,5 +55,5 @@ end
     # writedecimal! allocation-free
     wf(b, x) = writedecimal!(b, 1, x)
     wf(buf, x)
-    @test @allocated(wf(buf, x)) == 0
+    @test_allocfree wf(buf, x)
 end

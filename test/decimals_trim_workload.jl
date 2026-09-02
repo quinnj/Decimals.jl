@@ -71,7 +71,7 @@ function arithmetic_paths()::Nothing
     check(overflowed, "checked add throws")
     check(string(rescale(Decimal64{4}, a)) == "10.0500", "rescale up")
     check(string(rescale(Decimal64{1}, a)) == "10.0", "rescale rounds")
-    nv = normalize(parse(D128_10, "1.5000000000"))
+    nv = Decimals.normalize(parse(D128_10, "1.5000000000"))
     check(Decimals.scale(nv) == Int32(1), "normalize strips zeros")
     wide = parse(D256_40, "3.0000000000000000000000000000000000000000")
     check(string(wide / parse(D256_40, "7.0000000000000000000000000000000000000000")) ==

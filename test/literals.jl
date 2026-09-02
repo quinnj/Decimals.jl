@@ -27,18 +27,18 @@ end
 
 @testset "normalize" begin
     rng = Xoshiro(10001)
-    @test normalize(dec"1.2000") === DecimalValue{Int32}(12, 1)
-    @test normalize(Decimal{18,4}("5.0000")) === DecimalValue{Int64}(5, 0)
-    @test normalize(DecimalValue{Int64}(12000, 0)) === DecimalValue{Int64}(12000, 0)
-    @test normalize(DecimalValue{Int128}(Int128(123) * Int128(10)^30, 33)) ===
+    @test Decimals.normalize(dec"1.2000") === DecimalValue{Int32}(12, 1)
+    @test Decimals.normalize(Decimal{18,4}("5.0000")) === DecimalValue{Int64}(5, 0)
+    @test Decimals.normalize(DecimalValue{Int64}(12000, 0)) === DecimalValue{Int64}(12000, 0)
+    @test Decimals.normalize(DecimalValue{Int128}(Int128(123) * Int128(10)^30, 33)) ===
           DecimalValue{Int128}(123, 3)
-    @test normalize(zero(DecimalValue{Int64})) === DecimalValue{Int64}(0, 0)
-    @test normalize(DecimalValue{Int64}(-100, 4)) === DecimalValue{Int64}(-1, 2)
+    @test Decimals.normalize(zero(DecimalValue{Int64})) === DecimalValue{Int64}(0, 0)
+    @test Decimals.normalize(DecimalValue{Int64}(-100, 4)) === DecimalValue{Int64}(-1, 2)
     for _ in 1:20000
         u = rand(rng, -10^12:10^12)
         s = rand(rng, 0:20)
         v = DecimalValue{Int64}(u, s)
-        n = normalize(v)
+        n = Decimals.normalize(v)
         @test n == v
         @test scale(n) == 0 || !iszero(rem(unscaled(n), 10)) || iszero(unscaled(n))
     end
@@ -46,7 +46,7 @@ end
         u = Int256(rand(rng, big(-10)^40:big(10)^40))
         s = rand(rng, 0:70)
         v = DecimalValue{Int256}(u, s)
-        n = normalize(v)
+        n = Decimals.normalize(v)
         @test n == v
         @test scale(n) == 0 || !iszero(rem(D._tobigsigned(unscaled(n)), 10)) ||
               iszero(unscaled(n))
