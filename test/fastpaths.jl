@@ -107,10 +107,21 @@ end
         for DT in targets
             @test tryparse(DT, s) === general(DT, s)
         end
+        digits = ['0':'9';]
+        s = String(vcat(rand(rng, ('-', '+', '1', '9')), rand(rng, digits, rand(rng, 14:39)),
+                        ['.'], rand(rng, digits, rand(rng, 0:8))))
+        s = length(s) > 41 ? s[1:41] : s
+        for DT in targets
+            @test tryparse(DT, s) === general(DT, s)
+        end
     end
     fixed = ["1", "1.", ".5", "-.5", "+1.25", "0000.10", "-0", "12345678901234.5",
              "1234567890123456", "99999999999999999", "1e2", " 1.5 ", "1.5 ", "1..5",
-             "", "-", ".", "+", "1.2.3", "0.000000000000001", "-99999999.99"]
+             "", "-", ".", "+", "1.2.3", "0.000000000000001", "-99999999.99",
+             "123456789.123456789", "-123456789012345678.90123456789012345678",
+             "99999999999999999999999999999999999999", "100000000000000000000000000000000000000",
+             "0000000000000000000000000000000000000001.5", "1234567890123456789012345678901234567890.5",
+             "12345678901234567890.123456789012345678e3", "                                       1"]
     for s in fixed, DT in targets
         @test tryparse(DT, s) === general(DT, s)
         g = general(DT, s)
@@ -141,9 +152,20 @@ end
         @test maximum(m; dims=1) == mapreduce(identity, max, m; dims=1)
         @test minimum(m; dims=2) == mapreduce(identity, min, m; dims=2)
         @test maximum(v; init=typemax(T)) === typemax(T)
-        @test_throws ArgumentError maximum(T[])
+        @test_throws Union{ArgumentError, MethodError} maximum(T[])  # 1.10 throws MethodError
     end
     @test sort(Decimal64{2}[]) == Decimal64{2}[]
     @test Base.Sort.UIntMappable(Decimal64{2}, Base.Order.Forward) === UInt64
     @test Base.Sort.UIntMappable(Decimal{76,2,Int256}, Base.Order.Forward) === nothing
+end
+
+@testset "sum widens the Int128 tier to Int256" begin
+    T = Decimal{38,4,Int128}
+    v = fill(typemax(T), 1000)
+    s = sum(v)
+    @test s isa Decimal{76,4,Int256}
+    @test big(s) == 1000 * big(typemax(T))
+    @test sum(T[]) === zero(Decimal{76,4,Int256})
+    @test sum(fill(Decimal64{2}("1.25"), 4)) isa Decimal{38,2,Int128}
+    @test_throws OverflowError sum(fill(typemax(Decimal{76,2,Int256}), 2))
 end
