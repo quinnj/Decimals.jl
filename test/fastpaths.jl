@@ -1,7 +1,7 @@
 # Differential tests for the machine-arithmetic fast paths: each is checked
 # against the exact (BigInt / general-scanner) route it shortcuts.
 using Decimals: Int256, _cmpfloat, _cmpfloatbig, _fromfloat, _fromfloat_big,
-                _parsecore, _fitdecimal, _fitvalue
+                _parsecore, _fitdecimal, _fitvalue, _parsestring
 
 
 @testset "decimal vs float comparison fast path" begin
@@ -84,7 +84,7 @@ end
     @test_throws OverflowError Decimal64{2}(1e17)
 end
 
-@testset "Base.parse tiny fast path" begin
+@testset "parse (via the Parsers extension) agrees with the core scanner" begin
     rng = Xoshiro(99)
     # the general route the fast path shortcuts
     function general(::Type{DT}, s) where {DT <: Decimal}
@@ -135,6 +135,10 @@ end
     @test tryparse(Decimal{9,2}, "1.25") === Decimal{9,2,Int32}("1.25")
     @test tryparse(DecimalValue, "1.25") === DecimalValue{Int64}(125, 2)
     @test tryparse(Decimal64{2}, SubString("x1.25y", 2, 5)) === Decimal64{2}("1.25")
+    # the string constructors and literals use the core scanner and agree
+    @test Decimal64{2}("1.25") === parse(Decimal64{2}, "1.25") === _parsestring(Decimal64{2}, "1.25")
+    @test DecimalValue("1.25") === parse(DecimalValue, "1.25")
+    @test_throws ArgumentError Decimal64{2}("nope")
 end
 
 @testset "radix sort and min/max over coefficients" begin

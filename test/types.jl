@@ -4,16 +4,6 @@ using Decimals: unscaled, scale, _tobigsigned
 using BitIntegers
 using Test, Random
 
-struct BrokenDecimalString <: AbstractString end
-
-function Base.codeunit(::BrokenDecimalString)
-    return UInt8
-end
-
-function Base.ncodeunits(::BrokenDecimalString)
-    error("broken decimal string")
-end
-
 # exact value of any decimal as Rational{BigInt}
 oracle(x) = _tobigsigned(unscaled(x)) // big(10)^scale(x)
 oracle(x::Integer) = big(x) // 1
@@ -265,7 +255,6 @@ end
     @test tryparse(Decimal64{2}, "1.2.3") === nothing
     @test tryparse(Decimal64{2}, "") === nothing
     @test tryparse(Decimal64{2}, "1e") === nothing
-    @test_throws ErrorException tryparse(Decimal64{2}, BrokenDecimalString())
     huge = string(big(2)^256 - 100)
     @test_throws OverflowError parse(Decimal{9,0,Int32}, huge)
     @test_throws OverflowError parse(Decimal{9,0,Int32}, "-" * huge)

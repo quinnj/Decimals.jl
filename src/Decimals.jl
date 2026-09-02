@@ -21,6 +21,13 @@ include("show.jl")
 include("literals.jl")
 include("random.jl")
 
+function __init__()
+    @static if isdefined(Base.Experimental, :register_error_hint)
+        Base.Experimental.register_error_hint(_parsehint, MethodError)
+    end
+    return nothing
+end
+
 @static if VERSION >= v"1.11"
     eval(Expr(:public, :normalize, :unscaled, :scale, :AbstractDecimal,
               :writedecimal!, :decimallength))

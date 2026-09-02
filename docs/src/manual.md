@@ -48,7 +48,8 @@ dec"1.25"                          # literal, minimal fitting type
 dec"1_000_000.25"                  # underscores allowed between digit groups
 dec"1.5e-3"                        # exponents fold into the scale
 
-Decimal64{2}("1234.56")            # from a string (this is parse)
+Decimal64{2}("1234.56")            # from a string (exact core scanner)
+using Parsers                      # parse/tryparse come from the Parsers extension
 parse(Decimal64{2}, "1234.567")    # 1234.57 — rounds half-even at the target scale
 tryparse(Decimal64{2}, "nope")     # nothing
 
@@ -201,9 +202,12 @@ julia> DecimalValue{Decimals.Int256}(123, 50)
 1.23E-48
 ```
 
-`parse` and `tryparse` accept an optional sign, digits, an optional decimal
-point, and an optional `e`/`E` exponent, with surrounding ASCII whitespace
-allowed. They round half-even into the target scale.
+`parse` and `tryparse` (with Parsers loaded — they are defined by the Parsers
+extension) accept an optional sign, digits, an optional decimal point, and an
+optional `e`/`E` exponent, with surrounding ASCII whitespace allowed. They
+round half-even into the target scale. The string constructors
+(`Decimal64{2}("1.25")`) and `dec"..."` literals use the package's own exact
+scanner and need no extension.
 
 ## The wire API
 
@@ -265,8 +269,10 @@ Parsers.parsenext(Decimal64{2}, buf, 1, length(buf))      # (12.34, 6, RC_OK)
 point: it stops at the first byte that cannot continue a decimal, so the caller
 can step through a delimited line. It requires Parsers 3. Under Parsers 2 the
 extension loads as a no-op — so an environment that also contains a
-Parsers-2-pinned package still resolves — and `Base.parse`/`tryparse` keep
-working.
+Parsers-2-pinned package still resolves — and `parse`/`tryparse` are
+unavailable until Parsers 3 is (string constructors and literals still work).
+The extension also defines `Base.parse`/`Base.tryparse` for decimal types, so
+plain `parse(Decimal64{2}, s)` is the same fast path once Parsers is loaded.
 
 ### Printf.jl
 

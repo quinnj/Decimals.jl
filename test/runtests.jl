@@ -1,4 +1,5 @@
 using Test
+using Parsers  # Base.parse/tryparse on decimal types come from the Parsers extension
 
 # Allocation-free gates hold on Julia 1.12+. Older compilers leave small
 # boxes around wide-integer temporaries, so the gates are skipped there while

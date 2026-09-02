@@ -45,7 +45,7 @@ These `Base` functions have methods for the decimal types; they are documented
 by `Base` and behave as described in [Semantics](@ref).
 
 Construction and conversion
-: `convert`, `reinterpret`, `parse`, `tryparse`, `promote_rule`,
+: `convert`, `reinterpret`, `parse` and `tryparse` (via the Parsers extension), `promote_rule`,
   `Float64` / `Float32` / `Float16` / `BigFloat` / `AbstractFloat`, `Rational`,
   `Integer` and the concrete integer types, `big`, `rationalize`, `widen`.
 

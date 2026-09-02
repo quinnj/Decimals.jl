@@ -121,7 +121,7 @@ always `true`, and operations that would produce a non-value throw instead.
 | `round`, `trunc`, `floor`, `ceil` | exact and in-type, with a `digits` keyword |
 | `convert`, constructors | **exact or throw** (`InexactError`/`OverflowError`) |
 | `Decimal{P,S}(::AbstractFloat)` | rounds half-even at scale `S`, as every cross-representation float conversion in Base does; `DecimalValue(x)` gives the *exact* binary expansion instead |
-| `parse`, `tryparse` | round half-even at the target scale, like `parse(Float64, s)`; `tryparse` returns `nothing` |
+| `parse`, `tryparse` | provided by the Parsers extension (`using Parsers`); round half-even at the target scale, like `parse(Float64, s)`; `tryparse` returns `nothing`. String constructors and `dec"..."` literals need no extension |
 | `rescale`, `round(D, x, mode)` | the explicit rounding conversions between decimal types |
 | `==`, `<`, `hash` | by numeric value across scales, precisions, and number types: `dec"1.20" == dec"1.2" == 12//10`, and `hash` agrees with equal `Int`/`Float64`/`Rational` |
 | `≈` | exact equality (Base's `rtoldefault` for non-`AbstractFloat` reals is 0, as for `Rational`); pass `rtol`/`atol` if you want tolerance |
@@ -139,10 +139,12 @@ Loaded automatically as package extensions when the companion package is
 present:
 
 - **Parsers.jl** — byte-level `Parsers.parse`/`tryparse`/`parsenext` over
-  strings or byte spans, with `decimal=','` and `rounding=` keywords. This is
-  the 8.4 ns path, and it is what a CSV or wire reader should call. Requires
-  Parsers 3; under Parsers 2 the extension loads as a no-op so environments
-  still resolve, and `Base.parse` keeps working.
+  strings or byte spans, with `decimal=','` and `rounding=` keywords, and the
+  `Base.parse`/`tryparse` methods for decimal types (there is one parsing
+  machinery, and it lives here). This is the ~7 ns path, and it is what a CSV
+  or wire reader should call. Requires Parsers 3; under Parsers 2 the
+  extension loads as a no-op so environments still resolve — `parse` is then
+  unavailable, while string constructors and literals keep working.
 
   ```julia
   using Decimals, Parsers
