@@ -380,11 +380,30 @@ _round(::Type{Decimal{P, S, T}}, x::DecimalValue, mode::RoundingMode) where {P, 
     _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), mode, x)
 
 """
-    rescale(D, x, mode=RoundNearest)
+    rescale(D::Type{<:Decimal}, x, mode=RoundNearest) -> D
+    rescale(x::DecimalValue, s::Integer, mode=RoundNearest) -> DecimalValue
 
-Convert a decimal to the target decimal type `D`, rounding with `mode` when
-the target scale cannot represent `x` exactly. `convert`/constructors are the
-exact-or-throw counterpart.
+Move a decimal to another scale, rounding with `mode` when the target scale
+cannot hold `x` exactly. The first form targets a `Decimal` type `D` (whose
+scale is a type parameter); the second re-scales a [`DecimalValue`](@ref) in
+place to the runtime scale `s`, which must be in `0:16383`.
+
+`mode` is any of `RoundNearest` (half-even, the default),
+`RoundNearestTiesAway`, `RoundNearestTiesUp`, `RoundToZero`, `RoundFromZero`,
+`RoundDown`, `RoundUp`. Rounding *up* in scale is always exact, so `mode` only
+matters when digits are dropped; overflowing the target's precision still
+throws `OverflowError`.
+
+`convert`/constructors are the exact-or-throw counterpart, and
+`round(D, x, mode)` is the same operation spelled Base's way.
+
+```jldoctest
+julia> rescale(Decimal64{2}, Decimal64{4}("1.2356"), RoundUp)
+1.24
+
+julia> rescale(DecimalValue(12345, 3), 1)
+12.3
+```
 """
 rescale(::Type{DT}, x::AbstractDecimal,
         mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
