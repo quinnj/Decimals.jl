@@ -73,6 +73,45 @@ const _ACCMAX = _upow10(UInt256, 76) - one(UInt256)
     return c == UInt8(' ') || UInt8('\t') <= c <= UInt8('\r')
 end
 
+# Per-byte whole-token parse for spans of 1..16 bytes: [+-]digits[.digits],
+# two tight loops (integer run, then fraction run) so no per-digit scale
+# bookkeeping. Anything else — exponents, weird bytes, leftovers — defers to
+# the general scanner, which also owns rejecting genuinely invalid input.
+# The branchy per-byte form beats wide SWAR here: short varied tokens keep
+# these branches well-predicted, and there is no clamped-gather tail.
+# Returns (m, sc, neg, handled).
+@inline function _scantiny(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
+    @inbounds begin
+        b = buf[i]
+        neg = b == UInt8('-')
+        i += Int(neg | (b == UInt8('+')))
+        m = UInt64(0)
+        ndig = 0
+        while i <= j
+            d = buf[i] - UInt8('0')
+            d > 0x09 && break
+            m = m * UInt64(10) + d
+            ndig += 1
+            i += 1
+        end
+        sc = 0
+        if i <= j && buf[i] == dec
+            i += 1
+            fs = i
+            while i <= j
+                d = buf[i] - UInt8('0')
+                d > 0x09 && break
+                m = m * UInt64(10) + d
+                i += 1
+            end
+            sc = i - fs
+            ndig += sc
+        end
+        (i <= j || ndig == 0) && return (UInt64(0), 0, neg, false)
+        return (m, sc, neg, true)
+    end
+end
+
 # parse ±digits[.digits][eE±digits] into (mag, sc, neg, sticky, ok):
 # value == ±(mag + sticky·ε) * 10^-sc, mag retaining 77 significant digits
 function _parsecore(s::AbstractString)
@@ -147,7 +186,36 @@ end
 # every other cross-representation parse in the ecosystem; exact-scale wire
 # values are unaffected. convert/constructors from other number types remain
 # exact-or-throw, and the Parsers.jl extension exposes rounding= for control.
+# parse targets with the storage type defaulted from the precision
+_parsetarget(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} = Decimal{P, S, T}
+_parsetarget(::Type{Decimal{P, S}}) where {P, S} = Decimal{P, S, _storagetype(P)}
+_parsetarget(::Type{DecimalValue{T}}) where {T <: StorageInt} = DecimalValue{T}
+_parsetarget(::Type{DecimalValue}) = DecimalValue{Int64}
+
+_fittiny(::Type{DT}, m::UInt64, sc::Int, neg::Bool) where {DT <: Decimal} =
+    _fitdecimal(DT, m, sc, neg, false, RoundNearest)
+_fittiny(::Type{DT}, m::UInt64, sc::Int, neg::Bool) where {DT <: DecimalValue} =
+    _fitvalue(DT, UInt256(m), sc, neg, false)
+
+# whole-string fast path for plain short tokens ([+-]digits[.digits], at most
+# 16 bytes); returns (value, handled, fit) — anything else falls to the
+# general scanner, which owns whitespace, exponents, and rejection
+@inline function _parsetiny(::Type{DT}, s::AbstractString) where {DT}
+    b = codeunits(s)
+    n = length(b)
+    (1 <= n <= 16) || return (zero(DT), false, false)
+    m, sc, neg, handled = _scantiny(b, 1, n, UInt8('.'))
+    handled || return (zero(DT), false, false)
+    v, fit = _fittiny(DT, m, sc, neg)
+    return (v, true, fit)
+end
+
 function Base.parse(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T <: StorageInt}
+    v, handled, fit = _parsetiny(Decimal{P, S, T}, s)
+    if handled
+        fit || _throwoverflow(Decimal{P, S, T}, s)
+        return v
+    end
     mag, sc, neg, sticky, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
     v, fit = _fitdecimal(Decimal{P, S, T}, mag, sc, neg, sticky, RoundNearest)
@@ -159,6 +227,11 @@ Base.parse(::Type{Decimal{P, S}}, s::AbstractString) where {P, S} =
     parse(Decimal{P, S, _storagetype(P)}, s)
 
 function Base.parse(::Type{DecimalValue{T}}, s::AbstractString) where {T <: StorageInt}
+    v, handled, fit = _parsetiny(DecimalValue{T}, s)
+    if handled
+        fit || _throwoverflow(DecimalValue{T}, s)
+        return v
+    end
     mag, sc, neg, sticky, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
     v, fit = _fitvalue(DecimalValue{T}, mag, sc, neg, sticky)
@@ -166,7 +239,10 @@ function Base.parse(::Type{DecimalValue{T}}, s::AbstractString) where {T <: Stor
     return v
 end
 
-function Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: Union{Decimal, DecimalValue}}
+function Base.tryparse(::Type{DT0}, s::AbstractString) where {DT0 <: Union{Decimal, DecimalValue}}
+    DT = _parsetarget(DT0)
+    v, handled, fit = _parsetiny(DT, s)
+    handled && return fit ? v : nothing
     try
         return parse(DT, s)
     catch e

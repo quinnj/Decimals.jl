@@ -390,6 +390,16 @@ function Base.sum(v::AbstractArray{Decimal{P, S, T}};
     return reinterpret(Decimal{38, S, Int128}, s)
 end
 
+# min/max over a decimal array are min/max over its coefficients, which are
+# ordered identically, so the integer SIMD reductions apply; keyword forms
+# (dims, init) take the generic element-wise path
+for (f, op) in ((:maximum, :max), (:minimum, :min))
+    @eval function Base.$f(v::Array{Decimal{P, S, T}}; kw...) where {P, S, T <: StorageInt}
+        isempty(kw) || return Base.mapreduce(identity, $op, v; kw...)
+        return reinterpret(Decimal{P, S, T}, $f(reinterpret(T, v)))
+    end
+end
+
 # ---- DecimalValue arithmetic (runtime scales) ----
 
 @noinline _throwvalop(op) =

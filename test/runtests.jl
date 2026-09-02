@@ -17,6 +17,7 @@ end
     include("floatconv.jl")
     include("literals.jl")
     include("ecosystem.jl")
+    include("fastpaths.jl")
     if Base.find_package("JSON") !== nothing
         include("json.jl")
     else
