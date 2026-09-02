@@ -1,6 +1,6 @@
 # Kernel-layer differential tests against a BigInt oracle.
 using Decimals: Decimals as D
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 const UWIDTHS = (UInt32, UInt64, UInt128, UInt256)

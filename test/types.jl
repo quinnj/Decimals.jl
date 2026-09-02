@@ -1,7 +1,7 @@
 # Type-layer tests: construction, conversion, comparison, hashing, parse/print.
 using Decimals
 using Decimals: unscaled, scale, _tobigsigned
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 # exact value of any decimal as Rational{BigInt}

@@ -10,6 +10,7 @@ macro test_allocfree(ex)
 end
 
 @testset "Decimals" begin
+    include("wideint.jl")
     include("kernels.jl")
     include("types.jl")
     include("arithmetic.jl")

@@ -295,3 +295,24 @@ function _divrem_512(nhi::UInt256, nlo::UInt256, d::UInt256)
     r = _u256(uu[1], uu[2], uu[3], uu[4])
     return (q, r >> lz)
 end
+
+# ---- Base division for the 256-bit storage integers ----
+# LLVM has no i256 division on every supported Julia, so the wide types
+# divide through the package's own kernels.
+function Base.divrem(x::UInt256, y::UInt256)
+    iszero(y) && throw(DivideError())
+    return _divrem_wide(x, y)
+end
+Base.div(x::UInt256, y::UInt256) = divrem(x, y)[1]
+Base.rem(x::UInt256, y::UInt256) = divrem(x, y)[2]
+function Base.divrem(x::Int256, y::Int256)
+    iszero(y) && throw(DivideError())
+    q, r = _divrem_wide(_mag(x), _mag(y))
+    qneg = (x < zero(Int256)) ⊻ (y < zero(Int256))
+    qs = qneg ? -(q % Int256) : (q % Int256)
+    rs = x < zero(Int256) ? -(r % Int256) : (r % Int256)
+    return (qs, rs)
+end
+Base.div(x::Int256, y::Int256) = divrem(x, y)[1]
+Base.rem(x::Int256, y::Int256) = divrem(x, y)[2]
+Base.div(x::T, y::T, ::typeof(RoundToZero)) where {T <: _Wide} = div(x, y)

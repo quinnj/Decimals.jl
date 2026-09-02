@@ -2,7 +2,7 @@
 # and sticky inputs against a BigInt oracle, tokenizer semantics.
 using Decimals, Parsers
 using Decimals: unscaled, scale, _tobigsigned
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 @testset "parsers ext" begin

@@ -1,10 +1,11 @@
 module Decimals
 
-using BitIntegers: BitIntegers, Int256, UInt256
+import Random
 
 export Decimal, DecimalValue, Decimal32, Decimal64, Decimal128, Decimal256,
        rescale, divide, @dec_str
 
+include("wideint.jl")
 include("tables.jl")
 include("limbs.jl")
 include("magic.jl")

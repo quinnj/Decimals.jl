@@ -17,7 +17,7 @@ import Parsers
 
 using Decimals: AbstractDecimal, StorageInt, _fitdecimal, _fitvalue,
                 _storagetype, _ndigits10, _scaleup, _mul256x64, _upow10
-using BitIntegers: UInt256
+using Decimals: UInt256
 using Parsers: RC_OK, RC_INVALID, RC_OVERFLOW
 
 # fill in defaulted type parameters for parse targets

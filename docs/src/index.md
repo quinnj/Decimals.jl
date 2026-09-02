@@ -23,9 +23,10 @@ using Pkg
 Pkg.add("Decimals")
 ```
 
-Julia 1.10 or later. The only runtime dependency is
-[BitIntegers.jl](https://github.com/rfourquet/BitIntegers.jl), for the 256-bit
-tier.
+Julia 1.10 or later, with no runtime dependencies outside the standard
+library: the 256-bit storage integers (`Decimals.Int256`/`UInt256`) are
+implemented in the package itself, directly on LLVM's native wide-integer
+arithmetic.
 
 ## Quick start
 

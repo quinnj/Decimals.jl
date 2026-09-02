@@ -1,7 +1,7 @@
 # Arithmetic differential tests against the Rational{BigInt} oracle.
 using Decimals
 using Decimals: unscaled, scale, _tobigsigned, _maxmag, _tobig
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 arithmetic_oracle(x) = _tobigsigned(unscaled(x)) // big(10)^scale(x)

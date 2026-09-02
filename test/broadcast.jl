@@ -1,6 +1,6 @@
 # Broadcast kernel tests: SIMD paths must agree exactly with scalar ops.
 using Decimals
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 @testset "broadcast kernels" begin

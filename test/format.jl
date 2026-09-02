@@ -1,7 +1,7 @@
 # Fast-formatter tests: differential against digit-by-digit construction.
 using Decimals
 using Decimals: writedecimal!, decimallength, unscaled, scale, _tobigsigned
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 # reference formatter built from BigInt string manipulation

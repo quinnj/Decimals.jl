@@ -1,7 +1,7 @@
 # Literal macro, normalize, and scientific-notation display.
 using Decimals
 using Decimals: Decimals as D, unscaled, scale
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 @testset "dec_str literal" begin

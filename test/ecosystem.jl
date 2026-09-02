@@ -1,7 +1,8 @@
 # Ecosystem-surface tests: big/rationalize/rand and the LinearAlgebra/Printf
 # extensions (factorizations route to Float64 — silent scale-rounding inside
 # generic lu! is never acceptable; matmul/dot/+ stay exact decimal).
-using Decimals, BitIntegers
+using Decimals
+using Decimals: Int256, UInt256
 using Test, Random, LinearAlgebra, Printf
 
 @testset "ecosystem surface" begin

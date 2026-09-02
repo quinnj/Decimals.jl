@@ -2,7 +2,7 @@
 # the exact BigInt slow path everywhere, including constructed half-ulp ties.
 using Decimals
 using Decimals: Decimals as D
-using BitIntegers
+using Decimals: Int256, UInt256
 using Test, Random
 
 @testset "float conversion differential" begin
