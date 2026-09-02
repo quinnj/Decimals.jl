@@ -141,7 +141,7 @@ end
         @test maximum(m; dims=1) == mapreduce(identity, max, m; dims=1)
         @test minimum(m; dims=2) == mapreduce(identity, min, m; dims=2)
         @test maximum(v; init=typemax(T)) === typemax(T)
-        @test_throws ArgumentError maximum(T[])
+        @test_throws Union{ArgumentError, MethodError} maximum(T[])  # 1.10 throws MethodError
     end
     @test sort(Decimal64{2}[]) == Decimal64{2}[]
     @test Base.Sort.UIntMappable(Decimal64{2}, Base.Order.Forward) === UInt64
