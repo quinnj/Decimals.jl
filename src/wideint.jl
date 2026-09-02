@@ -183,6 +183,11 @@ end
 (::Type{T})(x::AbstractFloat) where {T <: _Wide} = T(BigInt(x))
 Base.BigFloat(x::_Wide) = BigFloat(BigInt(x))
 
+# ---- IO: raw little-endian bytes, as for the machine integers ----
+Base.write(io::IO, x::_Wide) = write(io, Ref(x))
+Base.read(io::IO, ::Type{T}) where {T <: _Wide} = read!(io, Ref{T}(zero(T)))[]
+Base.bswap(x::_Wide) = Base.bswap_int(x)
+
 # ---- random ----
 Random.rand(rng::Random.AbstractRNG, ::Random.SamplerType{UInt256}) =
     (UInt256(rand(rng, UInt128)) << 128) | UInt256(rand(rng, UInt128))
