@@ -358,18 +358,21 @@ Base.trunc(x::DecimalValue; digits::Integer=0) = round(x, RoundToZero; digits)
 Base.floor(x::DecimalValue; digits::Integer=0) = round(x, RoundDown; digits)
 Base.ceil(x::DecimalValue; digits::Integer=0) = round(x, RoundUp; digits)
 
-# ---- sum: accumulate in (at least) the Int128 tier ----
+# ---- sum: accumulate one tier wider ----
 
 _sumtype(::Type{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}} =
     Decimal{38, S, Int128}
-_sumtype(::Type{Decimal{P, S, T}}) where {P, S, T <: Union{Int128, Int256}} =
-    Decimal{P, S, T}
+_sumtype(::Type{Decimal{P, S, Int128}}) where {P, S} = Decimal{76, S, Int256}
+_sumtype(::Type{Decimal{P, S, Int256}}) where {P, S} = Decimal{P, S, Int256}
 
-# widening a narrow tier to Decimal{38,S,Int128} is a pure sign-extension of
-# the unscaled value (same scale, invariant preserved) — no checks needed
+# widening a tier (Int32/Int64 -> Int128, Int128 -> Int256) is a pure
+# sign-extension of the unscaled value (same scale, invariant preserved) —
+# no checks needed; a full-width Int128 column then sums without overflow
 @inline _sumwiden(x::Decimal{P, S, T}) where {P, S, T <: Union{Int32, Int64}} =
     reinterpret(Decimal{38, S, Int128}, Int128(x.unscaled))
-@inline _sumwiden(x::Decimal{P, S, T}) where {P, S, T <: Union{Int128, Int256}} = x
+@inline _sumwiden(x::Decimal{P, S, Int128}) where {P, S} =
+    reinterpret(Decimal{76, S, Int256}, Int256(x.unscaled))
+@inline _sumwiden(x::Decimal{P, S, Int256}) where {P, S} = x
 
 Base.add_sum(x::Decimal, y::Decimal) = _sumwiden(x) + _sumwiden(y)
 Base.reduce_first(::typeof(Base.add_sum), x::Decimal) = _sumwiden(x)

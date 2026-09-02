@@ -112,6 +112,41 @@ end
     end
 end
 
+# Same per-byte scan for spans of 17..40 bytes with a UInt128 accumulator:
+# up to 38 significant digits (every database decimal). Longer or unusual
+# input defers to the general scanner. Returns (m, sc, neg, handled).
+@inline function _scanmid(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
+    @inbounds begin
+        b = buf[i]
+        neg = b == UInt8('-')
+        i += Int(neg | (b == UInt8('+')))
+        m = UInt128(0)
+        ndig = 0
+        while i <= j
+            d = buf[i] - UInt8('0')
+            d > 0x09 && break
+            m = m * UInt128(10) + d
+            ndig += 1
+            i += 1
+        end
+        sc = 0
+        if i <= j && buf[i] == dec
+            i += 1
+            fs = i
+            while i <= j
+                d = buf[i] - UInt8('0')
+                d > 0x09 && break
+                m = m * UInt128(10) + d
+                i += 1
+            end
+            sc = i - fs
+            ndig += sc
+        end
+        (i <= j || ndig == 0 || ndig > 38) && return (UInt128(0), 0, neg, false)
+        return (m, sc, neg, true)
+    end
+end
+
 # parse ±digits[.digits][eE±digits] into (mag, sc, neg, sticky, ok):
 # value == ±(mag + sticky·ε) * 10^-sc, mag retaining 77 significant digits
 function _parsecore(s::AbstractString)
@@ -192,22 +227,30 @@ _parsetarget(::Type{Decimal{P, S}}) where {P, S} = Decimal{P, S, _storagetype(P)
 _parsetarget(::Type{DecimalValue{T}}) where {T <: StorageInt} = DecimalValue{T}
 _parsetarget(::Type{DecimalValue}) = DecimalValue{Int64}
 
-_fittiny(::Type{DT}, m::UInt64, sc::Int, neg::Bool) where {DT <: Decimal} =
+_fittiny(::Type{DT}, m::Union{UInt64, UInt128}, sc::Int, neg::Bool) where {DT <: Decimal} =
     _fitdecimal(DT, m, sc, neg, false, RoundNearest)
-_fittiny(::Type{DT}, m::UInt64, sc::Int, neg::Bool) where {DT <: DecimalValue} =
+_fittiny(::Type{DT}, m::Union{UInt64, UInt128}, sc::Int, neg::Bool) where {DT <: DecimalValue} =
     _fitvalue(DT, UInt256(m), sc, neg, false)
 
-# whole-string fast path for plain short tokens ([+-]digits[.digits], at most
-# 16 bytes); returns (value, handled, fit) — anything else falls to the
-# general scanner, which owns whitespace, exponents, and rejection
+# whole-string fast path for plain tokens ([+-]digits[.digits]): a UInt64
+# scan up to 16 bytes, a UInt128 scan up to 40; returns (value, handled, fit)
+# — anything else falls to the general scanner, which owns whitespace,
+# exponents, and rejection
 @inline function _parsetiny(::Type{DT}, s::AbstractString) where {DT}
     b = codeunits(s)
     n = length(b)
-    (1 <= n <= 16) || return (zero(DT), false, false)
-    m, sc, neg, handled = _scantiny(b, 1, n, UInt8('.'))
-    handled || return (zero(DT), false, false)
-    v, fit = _fittiny(DT, m, sc, neg)
-    return (v, true, fit)
+    if 1 <= n <= 16
+        m, sc, neg, handled = _scantiny(b, 1, n, UInt8('.'))
+        handled || return (zero(DT), false, false)
+        v, fit = _fittiny(DT, m, sc, neg)
+        return (v, true, fit)
+    elseif 17 <= n <= 40
+        m, sc, neg, handled = _scanmid(b, 1, n, UInt8('.'))
+        handled || return (zero(DT), false, false)
+        v, fit = _fittiny(DT, m, sc, neg)
+        return (v, true, fit)
+    end
+    return (zero(DT), false, false)
 end
 
 function Base.parse(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T <: StorageInt}
