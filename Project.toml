@@ -1,7 +1,7 @@
 name = "Decimals"
-uuid = "8dc971d1-6768-4187-aca0-432d1dd9b305"
+uuid = "abce61dc-4473-55a0-ba07-351d65e31d42"
 authors = ["Jacob Quinn <quinn.jacobd@gmail.com>"]
-version = "1.0.0-DEV"
+version = "1.0.0"
 
 [deps]
 BitIntegers = "c3b6d118-76ef-56ca-8cc7-ebb389d030a1"
