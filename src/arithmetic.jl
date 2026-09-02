@@ -85,12 +85,6 @@ end
     return :(Decimal{$P, $S, $(_storagetype(P))})
 end
 
-"""
-    divide(x, y, mode=RoundNearest)
-
-Divide two decimals, rounding the true quotient at scale `max(scale(x),
-scale(y))` with `mode`. `x / y` is `divide(x, y, RoundNearest)`.
-"""
 # round(mag*10^k / d): the scaled dividend usually fits 256 bits; deep-scale
 # operands spill into a 512-bit dividend handled by _divrem_512. Returns
 # (q, ok); ok=false means the dividend or quotient exceeds any representable
@@ -124,6 +118,30 @@ end
     return (inc ? q + one(UInt256) : q, true)
 end
 
+"""
+    divide(x, y, mode=RoundNearest)
+
+Divide two decimals, rounding the true quotient at scale `max(scale(x),
+scale(y))` with `mode`. `x / y` is exactly `divide(x, y, RoundNearest)`
+(half-even) — there is no global rounding state, so a different mode is always
+an argument, never a context.
+
+`mode` is any of `RoundNearest`, `RoundNearestTiesAway`, `RoundNearestTiesUp`,
+`RoundToZero`, `RoundFromZero`, `RoundDown`, `RoundUp`. Dividing by zero throws
+`DivideError`; a quotient too large for the result type throws `OverflowError`.
+For `Decimal` operands the result type is derived from the operand parameters
+(the widest quotient that can occur, capped at the 76-digit tier); for
+[`DecimalValue`](@ref) operands it keeps the promoted storage type and the
+runtime scale `max(scale(x), scale(y))`.
+
+```jldoctest
+julia> divide(Decimal64{2}("1.00"), Decimal64{2}("3.00"))
+0.33
+
+julia> divide(Decimal64{2}("1.00"), Decimal64{2}("3.00"), RoundUp)
+0.34
+```
+"""
 @inline function divide(x::Decimal{P1, S1, T1}, y::Decimal{P2, S2, T2},
                         mode::RoundingMode=RoundNearest) where {P1, S1, T1 <: StorageInt, P2, S2, T2 <: StorageInt}
     RT = _divtype(Decimal{P1, S1, T1}, Decimal{P2, S2, T2})

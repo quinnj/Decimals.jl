@@ -36,6 +36,7 @@ function _decliteral(str::AbstractString)
 end
 
 """
+    @dec_str -> Decimal
     dec"1.25"
 
 An exact decimal literal. Produces the minimal-fitting `Decimal{P,S}` (so
@@ -43,6 +44,17 @@ An exact decimal literal. Produces the minimal-fitting `Decimal{P,S}` (so
 beyond 76 digits of precision fall back to a `DecimalValue{Int256}`. Digit
 groups may be separated with underscores (`dec"1_000_000.25"`). The literal
 must be exactly representable — no silent rounding.
+
+Exponents are accepted and folded into the scale (`dec"1.5e-3"` is
+`Decimal{4,4,Int32}`), and trailing zeros are significant: `dec"1.50"` has
+scale 2 while `dec"1.5"` has scale 1 (they compare equal). A literal that
+cannot be represented exactly — more than 77 significant digits, or a
+magnitude past the widest tier — is an `ArgumentError` at parse time, not a
+rounded value.
+
+Because the type is minimal-fitting, a literal used in arithmetic promotes to
+whatever the other operand needs; annotate explicitly
+(`Decimal64{2}("1.25")`, or `convert`) when a column type is wanted.
 """
 macro dec_str(s)
     return _decliteral(s)
@@ -54,6 +66,12 @@ end
 The value of `x` with all trailing zeros removed from the coefficient and the
 scale reduced to match (scales never go below zero, so integer values keep
 scale 0): `normalize(dec"1.2000") == DecimalValue(12, 1)`.
+
+The result is always a [`DecimalValue`](@ref) — the scale is a property of the
+value, not of the type — and keeps the input's storage type. The numeric value
+is unchanged (`normalize(x) == x` always), so this only matters where the
+*representation* is observable: the digits `string` prints, or a wire format
+that transmits the scale.
 """
 function normalize(x::AbstractDecimal)
     T = _storage(typeof(x))
