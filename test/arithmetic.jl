@@ -268,22 +268,22 @@ end
     cmpf(x, y) = x < y
     for f in (addf, mulf, divf, qrf, cmpf)
         f(a, b); f(c, c); f(e, e)
-        @test @allocated(f(a, b)) == 0
-        @test @allocated(f(c, c)) == 0
-        @test @allocated(f(e, e)) == 0
+        @test_allocfree f(a, b)
+        @test_allocfree f(c, c)
+        @test_allocfree f(e, e)
     end
     rf(x) = round(x, digits=1)
     rf(a); rf(c)
-    @test @allocated(rf(a)) == 0
-    @test @allocated(rf(c)) == 0
+    @test_allocfree rf(a)
+    @test_allocfree rf(c)
     v = DecimalValue{Int64}(12345, 3)
     rf(v)
-    @test @allocated(rf(v)) == 0
+    @test_allocfree rf(v)
     vmin = DecimalValue{Int64}(typemin(Int64), 0)
     oneval = one(DecimalValue{Int64})
     mulf(vmin, oneval); divf(vmin, oneval)
-    @test @allocated(mulf(vmin, oneval)) == 0
-    @test @allocated(divf(vmin, oneval)) == 0
+    @test_allocfree mulf(vmin, oneval)
+    @test_allocfree divf(vmin, oneval)
 end
 
 @testset "type stability" begin

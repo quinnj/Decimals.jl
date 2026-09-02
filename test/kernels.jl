@@ -197,9 +197,9 @@ end
     wide(x256, UInt256(999983))
     wide(x256, (UInt256(1) << 130) | UInt256(7))
     sd(x256, 33, RoundNearest)
-    @test @allocated(wide(x256, UInt256(999983))) == 0
-    @test @allocated(wide(x256, (UInt256(1) << 130) | UInt256(7))) == 0
-    @test @allocated(sd(x256, 33, RoundNearest)) == 0
+    @test_allocfree wide(x256, UInt256(999983))
+    @test_allocfree wide(x256, (UInt256(1) << 130) | UInt256(7))
+    @test_allocfree sd(x256, 33, RoundNearest)
 end
 
 @testset "divlu and reciprocal" begin

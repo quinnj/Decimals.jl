@@ -1,5 +1,13 @@
 using Test
 
+# Allocation-free gates hold on Julia 1.11+. The 1.10 compiler leaves small
+# boxes around wide-integer temporaries, so the gates are skipped there while
+# every value assertion still runs.
+const ALLOC_GATES = VERSION >= v"1.11"
+macro test_allocfree(ex)
+    return esc(:(ALLOC_GATES && @test @allocated($ex) == 0))
+end
+
 @testset "Decimals" begin
     include("kernels.jl")
     include("types.jl")

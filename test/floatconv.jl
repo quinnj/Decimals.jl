@@ -37,7 +37,7 @@ using Test, Random
     x = reinterpret(Decimal{38,9,Int128}, Int128(10)^30 + 7)
     g(a) = Float64(a)
     g(x)
-    @test @allocated(g(x)) == 0
+    @test_allocfree g(x)
     # batched 5-stripping is an exact valuation extractor
     for _ in 1:50000
         w = rand(rng, 1:4)
