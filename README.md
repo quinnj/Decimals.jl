@@ -223,11 +223,13 @@ API comparison.
 ## Performance
 
 On an Apple M3 Max under Julia 1.12.6, with money-shaped `Decimal64{2}`
-values: 6.57 ns to parse a string, 22.71 ns to format one, 1.57 ns to
-multiply, 6.50 ns to divide, and 0.165 ms to sum a million-element column.
-Scalar arithmetic and comparison are allocation-free. CI also compiles a
-`juliac --trim=safe` workload covering parsing, arithmetic, formatting, and
-the wire API, so those paths stay statically compilable.
+values: 6.57 ns to parse a string, 1.57 ns to multiply, and 0.309 ns to add,
+the last two measured as folds over a 1000-element corpus. A million-element
+column holds about 8 bytes of live heap per element, against about 80 for
+the 0.5.1 `Decimal`. Scalar arithmetic and comparison are allocation-free.
+CI also compiles a `juliac --trim=safe` workload covering parsing,
+arithmetic, formatting, and the wire API, so those paths stay statically
+compilable.
 
 [`bench/PERF.md`](bench/PERF.md) has the method, the machine and version
 table, the comparison against Decimals 0.5.1, DecFP, FixedPointDecimals,
