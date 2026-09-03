@@ -244,11 +244,8 @@ Issues and pull requests are welcome. Run the test suite with
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-The scripts in `bench/` run against the pinned environments that
-`bench/run.sh` builds; `bench/PERF.md` has the steps, and each script's
-header says what it measures. New functionality wants regression coverage
-beside the code it touches (parser changes in `test/parsers.jl`, and so on),
-and performance claims want before/after numbers.
+The benchmark harness is packed in `bench/harness.tar.xz`; `bench/README.md`
+explains how to unpack and run it.
 
 ## License
 
