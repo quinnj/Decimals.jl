@@ -10,12 +10,11 @@ import Parsers
 # This extension needs the Parsers 3 kernels, but the compat bound admits
 # Parsers 2 so that environments pinned there still resolve. Against Parsers 2
 # the extension loads as a no-op: everything below, including the Base.parse and
-# Base.tryparse methods for decimal types, is simply absent.
+# Base.tryparse methods for decimal types, is absent.
 @static if pkgversion(Parsers) >= v"3"
 
-using Decimals: AbstractDecimal, StorageInt, _fitdecimal, _fitvalue,
-                _storagetype, _ndigits10, _scaleup, _mul256x64, _upow10
-using Decimals: UInt256
+using Decimals: StorageInt, UInt256, _fitdecimal, _fitvalue, _storagetype,
+                _ndigits10, _mul256x64, _upow10
 using Parsers: RC_OK, RC_INVALID, RC_OVERFLOW
 
 # fill in defaulted type parameters for parse targets
@@ -50,7 +49,7 @@ _fullT(::Type{DecimalValue}) = DecimalValue{Int64}
         chunk, _ = Parsers._digits19(buf, k, n)
         if nd + n <= 38
             # stay in 128-bit arithmetic while the magnitude allows
-            m128 = (mag % UInt128) * Decimals._upow10(UInt128, n) + UInt128(chunk)
+            m128 = (mag % UInt128) * _upow10(UInt128, n) + UInt128(chunk)
             mag = UInt256(m128)
         else
             # cannot overflow: nd + n <= 77 digits; 10^n fits a limb (n <= 19)
@@ -214,7 +213,7 @@ end
     n <= 19 && return UInt128(Parsers._digits19(buf, k, n)[1])
     hi = Parsers._digits19(buf, k, 19)[1]
     lo = Parsers._digits19(buf, k + 19, n - 19)[1]
-    return UInt128(hi) * Decimals._upow10(UInt128, n - 19) + UInt128(lo)
+    return UInt128(hi) * _upow10(UInt128, n - 19) + UInt128(lo)
 end
 
 # middle tier: tokens whose digits fit a UInt128 (<= 38, which covers every
@@ -243,7 +242,7 @@ end
     m = intn > 0 ? _digits38(buf, i, intn) : Z
     if haspoint
         if fracn > 0
-            m = m * Decimals._upow10(UInt128, fracn) + _digits38(buf, e1 + 1, fracn)
+            m = m * _upow10(UInt128, fracn) + _digits38(buf, e1 + 1, fracn)
             i = e2
         elseif intn > 0
             i = e1 + 1

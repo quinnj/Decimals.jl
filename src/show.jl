@@ -5,9 +5,9 @@
 
 Base.print(io::IO, x::AbstractDecimal) = print(io, string(x))
 
-# Human-facing display: plain positional form normally, scientific notation
-# once the plain form gets unwieldy (deep-scale DecimalValues). string/print
-# always stay positional — they are the wire format.
+# Human-facing display: the plain positional form, switching to scientific
+# notation once that form grows unwieldy (deep-scale DecimalValues). string and
+# print stay positional always, being the wire format.
 function Base.show(io::IO, ::MIME"text/plain", x::AbstractDecimal)
     if decimallength(x) > 44
         _showsci(io, x)

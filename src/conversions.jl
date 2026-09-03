@@ -213,7 +213,7 @@ end
 
 # non-throwing fit of ±mag*10^-sc (with optional sticky tail) into a target
 # type, for parser integrations: returns (value, ok) with ok=false on overflow.
-# Magnitudes that fit the target's own width run entirely at that width — the
+# A magnitude that fits the target's own width is scaled at that width, so the
 # common money-string case never touches 256-bit arithmetic.
 @inline function _fitnarrow(::Type{Decimal{P, S, T}}, m::U, sc::Int, neg::Bool,
                             mode::RoundingMode) where {P, S, T <: StorageInt, U <: Unsigned}
