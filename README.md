@@ -244,12 +244,11 @@ Issues and pull requests are welcome. Run the test suite with
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-The scripts in `bench/` need an environment carrying Chairmarks, Parsers,
-DecFP, and FixedPointDecimals alongside this package; each file's header says
-what it measures, and `bench/PERF.md` lists the steps. New functionality
-wants regression coverage beside the code it touches (parser changes in
-`test/parsers.jl`, and so on), and performance claims want before/after
-numbers.
+The scripts in `bench/` run against the pinned environments that
+`bench/run.sh` builds; `bench/PERF.md` has the steps, and each script's
+header says what it measures. New functionality wants regression coverage
+beside the code it touches (parser changes in `test/parsers.jl`, and so on),
+and performance claims want before/after numbers.
 
 ## License
 
