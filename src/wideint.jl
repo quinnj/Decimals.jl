@@ -83,12 +83,14 @@ Base.promote_rule(::Type{BigInt}, ::Type{<:_Wide}) = BigInt
 Base.promote_rule(::Type{BigFloat}, ::Type{<:_Wide}) = BigFloat
 
 # ---- comparisons ----
+
 Base.:(<)(x::UInt256, y::UInt256) = ult_int(x, y)
 Base.:(<)(x::Int256, y::Int256) = slt_int(x, y)
 Base.:(<=)(x::UInt256, y::UInt256) = ule_int(x, y)
 Base.:(<=)(x::Int256, y::Int256) = sle_int(x, y)
 
 # ---- bit operations and shifts ----
+
 Base.:(~)(x::T) where {T <: _Wide} = not_int(x)
 Base.:(&)(x::T, y::T) where {T <: _Wide} = and_int(x, y)
 Base.:(|)(x::T, y::T) where {T <: _Wide} = or_int(x, y)
@@ -127,6 +129,7 @@ Base.flipsign(x::Int256, y::Int256) = flipsign_int(x, y)
 Base.flipsign(x::Int256, y::Signed) = flipsign_int(x, Int256(y))
 
 # ---- arithmetic (division lives in knuth.jl) ----
+
 Base.:(-)(x::_Wide) = neg_int(x)
 Base.:(-)(x::T, y::T) where {T <: _Wide} = sub_int(x, y)
 Base.:(+)(x::T, y::T) where {T <: _Wide} = add_int(x, y)
@@ -156,6 +159,7 @@ end
 Base.rem(x::BigInt, ::Type{T}) where {T <: _Wide} = UInt256(x & BigInt(typemax(UInt256))) % T
 
 # ---- BigInt and floats (cold paths) ----
+
 function Base.BigInt(x::UInt256)
     r = big(0)
     for i in 3:-1:0
@@ -187,11 +191,13 @@ end
 Base.BigFloat(x::_Wide) = BigFloat(BigInt(x))
 
 # ---- IO: raw little-endian bytes, as for the machine integers ----
+
 Base.write(io::IO, x::_Wide) = write(io, Ref(x))
 Base.read(io::IO, ::Type{T}) where {T <: _Wide} = read!(io, Ref{T}(zero(T)))[]
 Base.bswap(x::_Wide) = Base.bswap_int(x)
 
 # ---- random ----
+
 Random.rand(rng::Random.AbstractRNG, ::Random.SamplerType{UInt256}) =
     (UInt256(rand(rng, UInt128)) << 128) | UInt256(rand(rng, UInt128))
 Random.rand(rng::Random.AbstractRNG, ::Random.SamplerType{Int256}) =

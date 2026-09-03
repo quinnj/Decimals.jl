@@ -187,7 +187,8 @@ end
 DecimalValue(u::T, scale::Integer) where {T <: StorageInt} = DecimalValue{T}(u, scale)
 DecimalValue(u::Integer, scale::Integer) = DecimalValue{Int64}(u, scale)
 
-# accessors
+# ---- accessors ----
+
 """
     Decimals.unscaled(x) -> Integer
 
