@@ -1,13 +1,8 @@
-# The two public value types.
-#
-# `Decimal{P,S,T}`: fixed-scale exact decimal, value == unscaled * 10^-S, with
-# the invariant |unscaled| < 10^P. P (precision) and S (scale) are type
-# parameters so a Vector{Decimal{P,S,T}} is byte-identical to an
-# Arrow/Parquet/DuckDB decimal buffer. T is the storage integer; constructors
-# derive it from P when not given.
-#
-# `DecimalValue{T}`: runtime-scale exact decimal for row-oriented wire values
-# (e.g. PostgreSQL numeric, whose scale travels per value).
+# The two public value types, both exact: value == unscaled * 10^-scale.
+# `Decimal{P,S,T}` carries precision and scale as type parameters, so a
+# Vector{Decimal{P,S,T}} is byte-identical to an Arrow/Parquet/DuckDB decimal
+# buffer; `DecimalValue{T}` carries the scale per value, as row-oriented wire
+# formats do (a PostgreSQL numeric's dscale).
 
 """
     Decimals.AbstractDecimal <: Real
@@ -95,8 +90,8 @@ struct Decimal{P, S, T <: StorageInt} <: AbstractDecimal
     end
 end
 
-# raw (unchecked) construction from an unscaled coefficient; the |u| < 10^P
-# invariant is the caller's contract, exactly as in zero-copy wire decode
+# unchecked construction from an unscaled coefficient: the |u| < 10^P invariant
+# is the caller's contract, as it is for a zero-copy wire decode
 @inline Base.reinterpret(::Type{Decimal{P, S, T}}, u::Integer) where {P, S, T <: StorageInt} =
     Decimal{P, S, T}(reinterpret, u)
 
@@ -256,12 +251,8 @@ Base.eps(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
 Base.eps(x::Decimal) = eps(typeof(x))
 Base.eps(x::DecimalValue{T}) where {T <: StorageInt} = DecimalValue{T}(one(T), x.scale)
 
-function Base.floatmin(::Type{D}) where {D <: Decimal}
-    return eps(D)
-end
-function Base.floatmax(::Type{D}) where {D <: Decimal}
-    return typemax(D)
-end
+Base.floatmin(::Type{D}) where {D <: Decimal} = eps(D)
+Base.floatmax(::Type{D}) where {D <: Decimal} = typemax(D)
 
 Base.widen(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
     Decimal{_capacity(_widen(T)), S, _widen(T)}

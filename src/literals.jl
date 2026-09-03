@@ -1,7 +1,7 @@
 # Decimal string literals and normalization.
 
-# strip digit-group underscores, rejecting them at the ends or adjacent to
-# the decimal point / exponent marker (matching the registered package's rule)
+# strip digit-group underscores, rejecting them at the ends of the literal or
+# adjacent to the decimal point or exponent marker
 function _stripseparators(s::AbstractString)
     occursin('_', s) || return s
     occursin(r"^_|_$|_\.|\._|_[eE]|[eE]_|^[+-]_", s) &&
@@ -79,7 +79,7 @@ function normalize(x::AbstractDecimal)
     return DecimalValue{T}(u, s)
 end
 
-# greedy chunked removal of trailing decimal zeros, mirroring _strip5s
+# chunked removal of trailing decimal zeros, mirroring _strip5u64
 @inline function _strip10u64(m::UInt64, left::Int)
     for k in (16, 8, 4, 2, 1)
         while left >= k

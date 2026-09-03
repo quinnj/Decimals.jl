@@ -1,9 +1,8 @@
-# Conversions between decimal types and Integer/Rational/AbstractFloat, plus
-# promotion rules. Contract: constructors/`convert` are exact (throwing
-# InexactError/OverflowError), except from AbstractFloat, which — like every
-# cross-representation float conversion in Base — rounds to the nearest
-# representable value (half-even) at the target scale. `round(T, x, mode)`
-# is the explicitly-rounding conversion for every source type.
+# Conversions between the decimal types and Integer/Rational/AbstractFloat, plus
+# promotion rules. Contract: constructors and `convert` are exact-or-throw
+# (InexactError/OverflowError), except from AbstractFloat, which rounds half-even
+# at the target scale as Base's cross-representation float conversions do;
+# `round(T, x, mode)` is the explicitly-rounding form for every source type.
 
 # round an already-scaled UInt256 magnitude by an arbitrary divisor, with mode
 @inline function _divround(n::UInt256, d::UInt256, neg::Bool, mode::RoundingMode)
@@ -368,8 +367,8 @@ function DecimalValue{T}(x::AbstractFloat) where {T <: StorageInt}
     return DecimalValue{T}(neg ? -u : u, s)
 end
 
-# unqualified defaults: floats/rationals convert exactly, which typically needs
-# wide storage (the exact decimal of a Float64 can carry ~55+ digits)
+# unqualified defaults: floats and rationals convert exactly, which usually
+# needs wide storage (the exact decimal of a Float64 runs to 50+ digits)
 DecimalValue(x::AbstractFloat) = DecimalValue{Int256}(x)
 DecimalValue(x::Rational) = DecimalValue{Int256}(x)
 DecimalValue(x::Integer) = DecimalValue{Int64}(x)
@@ -458,7 +457,7 @@ function _tointeger(::Type{I}, x::AbstractDecimal, mode) where {I}
     actualmode = mode === nothing ? RoundToZero : mode
     q, inexact = _scaledown(_tomag256(x.unscaled), scale(x), neg, actualmode)
     (inexact && mode === nothing) && _throwinexact(I, x)
-    # q < 2^255 always (magnitudes are bounded by 10^76-ish), so Int256 is safe
+    # no magnitude exceeds 2^255, so the two's-complement round-trip is exact
     sv = q % Int256
     return convert(I, neg ? -sv : sv)
 end
@@ -552,8 +551,8 @@ const _FPOW10 = Float64[10.0^k for k in 0:22]
 end
 
 function _tofloat(::Type{F}, u::Integer, s::Int) where {F <: AbstractFloat}
-    # fastest path (Float64 only — narrowing afterwards would double-round):
-    # numerator and denominator both exact, so the division rounds correctly
+    # Float64 only, since narrowing afterwards would double-round: numerator and
+    # denominator are both exact, so the single division is correctly rounded
     if F === Float64 && s <= 22 && -9007199254740992 <= u <= 9007199254740992
         return Float64(Int64(u)) / @inbounds(_FPOW10[s + 1])
     end
@@ -616,8 +615,8 @@ _tobigsigned(u::Integer) = big(u)
 _tobigsigned(u::Int256) = (n = _tobig(_mag(u)); u < 0 ? -n : n)
 
 Base.Float64(x::AbstractDecimal) = _tofloat(Float64, x.unscaled, scale(x))
-# up to 15 digits every coefficient is an exact Float64, so the divide alone
-# is the correctly rounded conversion — no magnitude test, fully inlinable
+# at 15 digits or fewer every coefficient is an exact Float64, so the divide
+# alone is the correctly rounded conversion and needs no magnitude test
 @inline function Base.Float64(x::Decimal{P, S, T}) where {P, S, T <: Union{Int32, Int64}}
     S <= 22 || return _tofloat(Float64, x.unscaled, S)
     u = x.unscaled

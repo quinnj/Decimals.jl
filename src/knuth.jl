@@ -1,7 +1,7 @@
-# Wide unsigned division: 256-bit dividends without BigInt. Divisors up to 64
-# bits use Möller–Granlund reciprocal 2-by-1 steps; wider divisors use Knuth's
-# Algorithm D over 64-bit limbs. The only libcalls are one 128-bit divide to
-# form a reciprocal (by-1 path) and Base's divrem on the 128÷128 fast path.
+# Wide unsigned division: 256- and 512-bit dividends without BigInt. Divisors
+# up to 64 bits use Möller–Granlund reciprocal 2-by-1 steps; wider divisors use
+# Knuth's Algorithm D over 64-bit limbs. The only libcall is Base's divrem on
+# the 128÷128 fast path.
 
 # 128÷64 schoolbook in base 2^32 (Hacker's Delight divlu): two hardware
 # 64-bit divides, no libcall. Requires hi < d (the quotient fits 64 bits).
@@ -297,8 +297,7 @@ function _divrem_512(nhi::UInt256, nlo::UInt256, d::UInt256)
 end
 
 # ---- Base division for the 256-bit storage integers ----
-# LLVM has no i256 division on every supported Julia, so the wide types
-# divide through the package's own kernels.
+
 function Base.divrem(x::UInt256, y::UInt256)
     iszero(y) && throw(DivideError())
     return _divrem_wide(x, y)

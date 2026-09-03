@@ -1,11 +1,11 @@
 # Division by 10^k via Granlund–Montgomery invariant-integer multiplication.
-# Julia/LLVM does NOT strength-reduce (U)Int128/256 division even by constants
-# (it emits __udivti3 libcalls), and our k is usually a runtime value anyway,
-# so we precompute (M, s, add) triples per width and divide with one mulhi.
+# LLVM does not strength-reduce (U)Int128/256 division even by a constant (it
+# emits __udivti3 libcalls), and k is usually a runtime value, so each width
+# gets a table of (M, s, add) triples and divides with one mulhi.
 
 # Round-up method: with F = N+s and M = ⌈2^F/d⌉, ⌊x*M/2^F⌋ == ⌊x/d⌋ for all
 # 0 <= x < 2^N iff e = M*d - 2^F <= 2^s (Granlund–Montgomery Thm 4.2).
-# When M needs N+1 bits (add == true) we store M - 2^N and use the
+# An M needing N+1 bits (add == true) is stored as M - 2^N and applied with the
 # Hacker's Delight fixup: q = (t + ((x - t) >> 1)) >> (s - 1), t = mulhi(x, M).
 function _magic(d::BigInt, N::Int)
     for s in 0:(2 * N)

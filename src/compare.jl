@@ -75,11 +75,10 @@ Base.:(<)(x::Rational, y::AbstractDecimal) = _cmprational(y, x) > 0
 
 # ---- vs AbstractFloat ----
 
-# Float64(x) is correctly rounded and therefore monotone, so a strict
-# inequality between it and y decides the comparison outright; only an equal
-# image needs the exact tie-break, which classifies |y| at x's scale with
-# integer arithmetic (floor plus an inexact flag). Other float types take the
-# BigInt cross-multiply.
+# Float64(x) is correctly rounded and therefore monotone, so a strict inequality
+# against y settles the comparison outright; only an equal image needs the exact
+# tie-break, which classifies |y| at x's scale in integer arithmetic (a floor
+# plus an inexact flag). Other float types take the BigInt cross-multiply.
 function _cmpfloat(x::AbstractDecimal, y::AbstractFloat)
     isnan(y) && return 2  # sentinel: unordered
     isinf(y) && return y > 0 ? -1 : 1
@@ -172,11 +171,11 @@ Base.:(<)(x::AbstractFloat, y::AbstractDecimal) = _cmpfloat(y, x) == 1
 # ---- hashing ----
 
 # x == num * 2^pow / den. Base's generic Real hash requires num/den in lowest
-# terms apart from powers of two (it strips those itself), so we strip the
-# common factors of five: u/(2^S*5^S) -> (u/5^r) / (2^S*5^(S-r)).
-# greedy chunked extraction of min(v5(u), s) factors of five: hardware
-# divides while the magnitude fits a limb, reciprocal wide divides otherwise —
-# trailing-zero-heavy values never pay one wide division per factor
+# terms apart from powers of two (it strips those itself), so the common factors
+# of five come out here: u/(2^S*5^S) -> (u/5^r) / (2^S*5^(S-r)).
+
+# extract min(v5(m), left) factors of five in descending chunks, so a value with
+# many trailing zeros costs a handful of divisions rather than one per factor
 @inline function _strip5u64(m::UInt64, left::Int)
     for k in (27, 13, 6, 3, 1)
         while left >= k

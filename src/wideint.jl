@@ -1,17 +1,14 @@
-# 256-bit storage integers. Two primitive types over LLVM's native i256
-# arithmetic — the same construction BitIntegers.jl uses, trimmed to what the
-# decimal kernels need: arithmetic, bit ops, shifts, comparisons, conversions
-# to and from the machine integers, BigInt and floats (cold), and hashing.
-# Division is deliberately absent here: LLVM has no i256 division on every
-# supported Julia, so `div`/`rem` are defined on top of the package's own
-# Knuth kernels in knuth.jl.
+# The 256-bit storage integers: two primitive types over LLVM's native i256
+# arithmetic, covering what the decimal kernels need (arithmetic, bit ops,
+# shifts, comparisons, conversions to and from the machine integers, BigInt and
+# floats). Division is absent: i256 division is not available across all
+# supported Julia versions, so `div`/`rem` build on the kernels in knuth.jl.
 
-using Base: add_int, sub_int, mul_int, neg_int, and_int, or_int, xor_int, not_int, checked_smul_int, checked_umul_int,
+using Base: add_int, sub_int, mul_int, neg_int, and_int, or_int, xor_int, not_int,
             shl_int, lshr_int, ashr_int, slt_int, ult_int, sle_int, ule_int,
             ctlz_int, cttz_int, ctpop_int, flipsign_int, checked_sadd_int,
             checked_ssub_int, checked_uadd_int, checked_usub_int
-using Core: bitcast, sext_int, zext_int, trunc_int, checked_trunc_sint,
-            checked_trunc_uint
+using Core: bitcast, sext_int, zext_int, trunc_int, checked_trunc_sint
 
 primitive type Int256 <: Signed 256 end
 primitive type UInt256 <: Unsigned 256 end
@@ -98,7 +95,7 @@ Base.:(|)(x::T, y::T) where {T <: _Wide} = or_int(x, y)
 Base.xor(x::T, y::T) where {T <: _Wide} = xor_int(x, y)
 
 # LLVM's variable-count shift on i256 expands poorly; split the count into a
-# 64-bit-multiple part (a fixed shift) and a remainder (the BitIntegers trick)
+# whole number of 64-bit steps (each a constant shift) plus a 0..63 remainder
 @inline function _wideshift(f::F, x::T, y::UInt) where {F, T <: _Wide}
     hi = y >> 6
     lo = y & 0x3f
@@ -115,7 +112,7 @@ Base.:(<<)(x::_Wide, y::UInt) = _wideshift(shl_int, x, y)
 @inline Base.:(>>)(x::_Wide, y::Int) = 0 <= y ? x >> (y % UInt) : x << ((-y) % UInt)
 @inline Base.:(<<)(x::_Wide, y::Int) = 0 <= y ? x << (y % UInt) : x >> ((-y) % UInt)
 @inline Base.:(>>>)(x::_Wide, y::Int) = 0 <= y ? x >>> (y % UInt) : x << ((-y) % UInt)
-# machine integers shifted by a wide count (rare): saturate through Int
+# machine integers shifted by a wide count: narrow the count to Int first
 Base.:(<<)(x::_MachineInt, y::_Wide) = x << Int(y)
 Base.:(>>)(x::_MachineInt, y::_Wide) = x >> Int(y)
 Base.:(>>>)(x::_MachineInt, y::_Wide) = x >>> Int(y)
@@ -138,13 +135,14 @@ Base.add_with_overflow(x::Int256, y::Int256) = checked_sadd_int(x, y)
 Base.sub_with_overflow(x::Int256, y::Int256) = checked_ssub_int(x, y)
 Base.add_with_overflow(x::UInt256, y::UInt256) = checked_uadd_int(x, y)
 Base.sub_with_overflow(x::UInt256, y::UInt256) = checked_usub_int(x, y)
-# Base's gcd / Rational construction reach for the checked family
+# Base's gcd and Rational construction call into the checked family
 Base.Checked.checked_abs(x::UInt256) = x
 function Base.Checked.checked_abs(x::Int256)
     x == typemin(Int256) && throw(OverflowError("checked arithmetic: cannot compute |x| for x = typemin(Int256)"))
     return abs(x)
 end
-# i256 checked multiply is only reliable in LLVM from Julia 1.11; below that go through BigInt
+# the i256 checked-multiply intrinsics are only reliable from Julia 1.11;
+# earlier versions go through BigInt
 function Base.mul_with_overflow(x::T, y::T) where {T <: _Wide}
     @static if VERSION >= v"1.11"
         return T <: Signed ? Base.checked_smul_int(x, y) : Base.checked_umul_int(x, y)
