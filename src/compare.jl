@@ -190,7 +190,7 @@ Base.:(<)(x::AbstractFloat, y::AbstractDecimal) = _cmpfloat(y, x) == 1
 end
 
 function _strip5s(u::T, s::Int) where {T <: StorageInt}
-    (u == zero(T) || s == 0) && return (u, s == 0 ? s : 0)
+    (u == zero(T) || s == 0) && return (u, 0)
     mw = _tomag256(u)
     left = s
     if mw > UInt256(typemax(UInt64))
