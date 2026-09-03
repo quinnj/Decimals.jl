@@ -294,11 +294,11 @@ end
 Base.:*(y::BigInt, x::Decimal) = x * y
 
 function Base.:*(x::DecimalValue{T}, y::_MulInt) where {T <: StorageInt}
-    neg = _isneg(x) != (y < zero(y))
+    neg = _isneg(x) ⊻ (y < zero(y))
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y))
     (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
-    return DecimalValue{T}((_isneg(x) ⊻ (y < zero(y))) ? -u : u, x.scale)
+    return DecimalValue{T}(neg ? -u : u, x.scale)
 end
 Base.:*(y::_MulInt, x::DecimalValue) = x * y
 
@@ -311,7 +311,7 @@ function Base.:*(x::DecimalValue{T}, y::BigInt) where {T <: StorageInt}
 end
 Base.:*(y::BigInt, x::DecimalValue) = x * y
 
-# ---- rounding to integer values within the type ----
+# ---- round/trunc/floor/ceil within the type ----
 
 # number of digits to drop, saturating instead of overflowing on huge `digits`
 @inline function _roundshift(s::Int, digits::Integer)
@@ -430,11 +430,11 @@ end
 function Base.:*(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt}
     s = scale(x) + scale(y)
     s <= 16383 || _throwvalop(:*)
-    neg = _isneg(x) != _isneg(y)
+    neg = _isneg(x) ⊻ _isneg(y)
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y.unscaled))
     (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
-    return DecimalValue{T}((_isneg(x) ⊻ _isneg(y)) ? -u : u, s)
+    return DecimalValue{T}(neg ? -u : u, s)
 end
 Base.:*(x::DecimalValue, y::DecimalValue) = *(promote(x, y)...)
 
@@ -469,14 +469,14 @@ end
     xm = abs(_tobigsigned(x.unscaled)) * big(10)^(s - scale(x))
     ym = abs(_tobigsigned(y.unscaled)) * big(10)^(s - scale(y))
     q, r = divrem(xm, ym)
-    if iszero(r)
-        return q, r, false, s
-    end
+    iszero(r) && return (q, r, false, s)
     qneg = _isneg(x) ⊻ _isneg(y)
     complement = ym - r
     inc = _roundinc(r < complement, r == complement, isodd(q), qneg, mode)
-    return inc ? q + 1 : q, inc ? complement : r,
-           inc ? !_isneg(x) : _isneg(x), s
+    return (inc ? q + 1 : q,
+            inc ? complement : r,
+            inc ? !_isneg(x) : _isneg(x),
+            s)
 end
 
 @inline function _valuefrommag(::Type{T}, mag::UInt256, neg::Bool,
