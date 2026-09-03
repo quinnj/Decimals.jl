@@ -56,7 +56,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
-          file: lcov.info
+          files: lcov.info
 
   trim:
     name: juliac --trim workload
