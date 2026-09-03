@@ -115,9 +115,13 @@ Base.:(<<)(x::_Wide, y::UInt) = _wideshift(shl_int, x, y)
 @inline Base.:(<<)(x::_Wide, y::Int) = 0 <= y ? x << (y % UInt) : x >> ((-y) % UInt)
 @inline Base.:(>>>)(x::_Wide, y::Int) = 0 <= y ? x >>> (y % UInt) : x << ((-y) % UInt)
 # machine integers shifted by a wide count: narrow the count to Int first
-Base.:(<<)(x::_MachineInt, y::_Wide) = x << Int(y)
-Base.:(>>)(x::_MachineInt, y::_Wide) = x >> Int(y)
-Base.:(>>>)(x::_MachineInt, y::_Wide) = x >>> Int(y)
+# a machine integer shifted by a wide count: counts past any machine width
+# saturate, as Base's shifts do, instead of failing the Int conversion
+_shiftcount(y::UInt256) = y > UInt256(1024) ? 1024 : Int(y)
+_shiftcount(y::Int256) = y > Int256(1024) ? 1024 : (y < Int256(-1024) ? -1024 : Int(y))
+Base.:(<<)(x::_MachineInt, y::_Wide) = x << _shiftcount(y)
+Base.:(>>)(x::_MachineInt, y::_Wide) = x >> _shiftcount(y)
+Base.:(>>>)(x::_MachineInt, y::_Wide) = x >>> _shiftcount(y)
 
 Base.count_ones(x::_Wide) = Int(ctpop_int(x))
 Base.leading_zeros(x::_Wide) = Int(ctlz_int(x))

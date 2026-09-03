@@ -401,16 +401,16 @@ end
 @noinline _throwvalop(op) =
     throw(OverflowError(string(op, " overflows the DecimalValue storage type")))
 
-function _valaligned(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt}
+function _valaligned(x::DecimalValue{T}, y::DecimalValue{T}, op::Symbol) where {T <: StorageInt}
     sx, sy = scale(x), scale(y)
     s = max(sx, sy)
     ux, uy = x.unscaled, y.unscaled
     if sx < s
         ux, ovf = _scaleup(ux, s - sx)
-        ovf && _throwvalop(:align)
+        ovf && _throwvalop(op)
     elseif sy < s
         uy, ovf = _scaleup(uy, s - sy)
-        ovf && _throwvalop(:align)
+        ovf && _throwvalop(op)
     end
     return ux, uy, s
 end
@@ -418,7 +418,7 @@ end
 for (op, kernel) in ((:+, :_add_ovf), (:-, :_sub_ovf))
     @eval begin
         function Base.$op(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt}
-            ux, uy, s = _valaligned(x, y)
+            ux, uy, s = _valaligned(x, y, $(QuoteNode(op)))
             u, ovf = $kernel(ux, uy)
             ovf && _throwvalop($(QuoteNode(op)))
             return DecimalValue{T}(u, s)

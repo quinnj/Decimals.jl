@@ -80,3 +80,10 @@ using Decimals: Int256, UInt256
     @test minimum(w) == -5 && maximum(w) == 5
     @test rand(rng, UInt256(3):UInt256(3)) === UInt256(3)
 end
+
+@testset "machine integers shifted by wide counts saturate" begin
+    @test 1 << UInt256(3) === 8 && 1 << Int256(3) === 8
+    @test 1 << (UInt256(1) << 200) === 0 && (-1) >> (UInt256(1) << 200) === -1
+    @test typemax(Int) >> (Int256(1) << 100) === 0 && typemax(Int) >>> Int256(2)^90 === 0
+    @test 8 >> Int256(-2) === 32 && 8 << (-(Int256(1) << 100)) === 0
+end

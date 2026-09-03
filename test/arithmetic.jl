@@ -299,3 +299,11 @@ end
     @inferred v + v
     @inferred v * v
 end
+
+@testset "DecimalValue alignment overflow names the operation" begin
+    a = DecimalValue{Int64}(typemax(Int64), 0)
+    b = DecimalValue{Int64}(1, 5)
+    @test_throws OverflowError a + b
+    @test occursin("+", sprint(showerror, try a + b catch e; e end))
+    @test occursin("-", sprint(showerror, try a - b catch e; e end))
+end
