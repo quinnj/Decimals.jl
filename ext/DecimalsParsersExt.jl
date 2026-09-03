@@ -309,6 +309,8 @@ end
 
 @inline _fit(::Type{DT}, mag, sc, neg, sticky,
              mode) where {DT <: Decimal} = _fitdecimal(DT, mag, sc, neg, sticky, mode)
+# a DecimalValue takes the token's own scale, so nothing is rounded and `mode`
+# has nothing to apply; a dropped tail is a failure to fit rather than a rounding
 @inline _fit(::Type{DT}, mag, sc, neg, sticky,
              mode) where {DT <: DecimalValue} =
     _fitvalue(DT, UInt256(mag), sc, neg, sticky)
@@ -438,6 +440,13 @@ end
                        rounding, Val(false))
 end
 
+# Base.parse/tryparse on decimal types live here rather than in the core
+# package, so that there is only one parsing implementation
+Base.parse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
+    Parsers.parse(DT, s)
+Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
+    Parsers.tryparse(DT, s)
+
 @inline function _parsenextdec(::Type{DT}, b::AbstractVector{UInt8}, i::Int, j::Int,
                                dec::UInt8, mode::RoundingMode) where {DT}
     m64, sc, neg, nextpos, ok, needwide = _scandec64(b, i, j, dec)
@@ -467,27 +476,19 @@ end
     return (v, nextpos, RC_OK)
 end
 
-# Base.parse/tryparse on decimal types live here rather than in the core
-# package, so that there is only one parsing implementation
-Base.parse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
-    Parsers.parse(DT, s)
-Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
-    Parsers.tryparse(DT, s)
-
 # Keep the rare high-index source type out of the common specialization:
 # routing both source types through one higher-order seam costs the short
 # decimal path its inlining.
-@noinline function _parsenextdecwindow(::Type{DT}, b::B, i::Int, j::Int,
-                                       dec::UInt8, rounding::RoundingMode) where
-                                       {DT, B <: AbstractVector{UInt8}}
+@noinline function _parsenextdecwindow(::Type{DT}, b::B, i::Int, j::Int, dec::UInt8,
+                                       rounding::RoundingMode) where {DT, B <: AbstractVector{UInt8}}
     window, first, final = Parsers._indexwindow(b, i, j)
     result = _parsenextdec(DT, window, first, final, dec, rounding)
     return Parsers._restoreprefix(window, result)
 end
 
 @inline function Parsers.parsenext(::Type{T}, buf::AbstractVector{UInt8}, pos::Integer,
-                           last::Integer; decimal::Char='.',
-                           rounding::RoundingMode=RoundNearest) where {T <: _DECTARGETS}
+                                   last::Integer; decimal::Char='.',
+                                   rounding::RoundingMode=RoundNearest) where {T <: _DECTARGETS}
     DT = _fullT(T)
     b, i, j = Parsers._prefixbounds(buf, pos, last)
     i > j && return (zero(DT), i, RC_INVALID)
