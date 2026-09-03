@@ -133,7 +133,7 @@ subtyping and there are no `NaN` or `Inf` values: `isfinite` is always
 | `*` | exact; result scale is `S1 + S2`, precision `min(P1+P2, 76)`, checked |
 | `*` by an `Integer` | scale-preserving, since multiplying by a count should not widen the scale |
 | `/` | rounds half-even at scale `max(S1, S2)`; `divide(x, y, mode)` for any other `RoundingMode` |
-| `sum` | widens to the `Int128` tier, where overflow is provably impossible below 1.7e20 elements, so the reduction is both safe and vectorizable |
+| `sum` | accumulates in a wider storage tier, where overflow is provably impossible (below 1.7e20 elements for a 64-bit-tier column), so the reduction is both safe and vectorizable |
 | `div`, `rem`, `mod`, `fld`, `cld`, `divrem` | real implementations in every rounding mode, not float fallbacks |
 | `round`, `trunc`, `floor`, `ceil` | exact and in-type, with a `digits` keyword |
 | `convert`, constructors | exact or throw (`InexactError`/`OverflowError`) |
@@ -199,9 +199,9 @@ Arrow C++, pandas, and Python `decimal`.
 115 of its 117 trials pass. The two that do not, `StatsBase.summarystats`
 and adaptive ODE solvers, require `AbstractFloat` input and fail identically
 for `Rational`; `float.(v)` is the answer in both cases. The document also
-records which analytics operations stay decimal (`sum`, `mean`, `median`) and
-which return `Float64` (`var`, `std`, `norm`, `sqrt`, `quantile` at a float
-`p`).
+records which analytics operations stay decimal (`sum`, `mean`, `median`,
+`var`) and which return `Float64` (`std`, `norm`, `sqrt`, `quantile` at a
+float `p`), each following what `Rational` does in Base.
 
 ## Migrating from 0.x
 
