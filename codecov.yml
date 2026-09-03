@@ -1,0 +1,11 @@
+# Coverage is reported but never blocks: uploads from fork pull requests have no
+# token, and this repository does not gate merges on coverage.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+comment: false
