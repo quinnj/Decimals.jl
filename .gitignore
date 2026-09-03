@@ -10,3 +10,4 @@ docs/build/
 bench/.envs/
 bench/rustbench/target/
 bench/results/*.log
+__pycache__/
