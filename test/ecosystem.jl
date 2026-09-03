@@ -1,6 +1,6 @@
 # Ecosystem-surface tests: big/rationalize/rand and the LinearAlgebra/Printf
-# extensions (factorizations route to Float64 — silent scale-rounding inside
-# generic lu! is never acceptable; matmul/dot/+ stay exact decimal).
+# extensions. Factorizations route to Float64 rather than silently rounding
+# scales inside generic lu!; matmul/dot/+ stay exact decimal.
 using Decimals
 using Decimals: Int256, UInt256
 using Test, Random, LinearAlgebra, Printf
@@ -42,7 +42,7 @@ using Test, Random, LinearAlgebra, Printf
           [d("0.10"), d("0.20"), d("0.30")]
 end
 
-@testset "exact printf and JSON" begin
+@testset "exact printf and checked arithmetic" begin
     io = IOBuffer()
     wide = Decimal{38,20,Int128}("12345678901234567.89012345678901234567")
     @printf(io, "%.20f", wide)

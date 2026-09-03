@@ -256,7 +256,8 @@ end
 @testset "_mul256x64 agrees with the full multiply" begin
     rng = Xoshiro(11)
     for _ in 1:20000
-        # keep the product inside 256 bits: top limb below 2^44, multiplier < 2^20..2^64 mixed
+        # mixed shapes: top limb below 2^44, multipliers from 1 up to 10^19.
+        # Both sides truncate to 256 bits, so the overflowing shapes count too.
         x = UInt256(rand(rng, UInt64)) | (UInt256(rand(rng, UInt64)) << 64) |
             (UInt256(rand(rng, UInt64)) << 128) | (UInt256(rand(rng, UInt64) >> 20) << 192)
         m = rand(rng, (UInt64(10)^19, UInt64(10)^7, rand(rng, UInt64) >> 44, UInt64(1), typemax(UInt64) >> 44))

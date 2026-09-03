@@ -73,9 +73,8 @@ using Test, Random
             str = intpart * "." * fracpart
             v = Parsers.parse(Decimal{38,9,Int128}, str)
             num = Base.parse(BigInt, intpart * fracpart)
-            want = div(num * big(10)^9, big(10)^nfrac, RoundNearest)
-            # RoundNearest on exact ties differs from half-even only at true
-            # ties; construct the oracle with explicit half-even semantics
+            # oracle spells out half-even at the target scale rather than
+            # relying on div(..., RoundNearest) to agree at exact ties
             q, r = divrem(num * big(10)^9, big(10)^nfrac)
             half2 = 2r - big(10)^nfrac
             want = q + (half2 > 0 || (half2 == 0 && isodd(q)) ? 1 : 0)

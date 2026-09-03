@@ -3,7 +3,6 @@
 using Decimals: Int256, _cmpfloat, _cmpfloatbig, _fromfloat, _fromfloat_big,
                 _parsecore, _fitdecimal, _fitvalue, _parsestring
 
-
 @testset "decimal vs float comparison fast path" begin
     rng = Xoshiro(2024)
     types = (Decimal{9,2,Int32}, Decimal{18,4,Int64}, Decimal{38,9,Int128},

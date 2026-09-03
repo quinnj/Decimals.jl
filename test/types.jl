@@ -96,10 +96,10 @@ end
     rng = Xoshiro(2002)
     for _ in 1:500
         n = rand(rng, -10^6:10^6)
-        d = rand(rng, 1:10^4)
+        d = rand(rng, 1:10^4)   # positive, so the oracle needs no sign fix-up
         r = n // d
         got = round(Decimal{38,10,Int128}, r)
-        want = div(big(n) * big(10)^10, big(d), RoundNearest) * sign(big(d))
+        want = div(big(n) * big(10)^10, big(d), RoundNearest)
         @test _tobigsigned(unscaled(got)) == want
     end
 end

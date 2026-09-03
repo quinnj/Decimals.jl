@@ -1,7 +1,6 @@
 # Compiles test/decimals_trim_workload.jl with JuliaC --trim=safe in a temp
 # environment, requires zero verifier errors and warnings, runs the resulting
 # executable, and asserts its output. DECIMALS_RUN_TRIM_TESTS=0 skips.
-# Pattern shared with MySQL.jl's trim harness.
 using Test
 
 const _TRIM_SAFE_ERROR_BUDGET = 0
@@ -14,7 +13,7 @@ const _TRIM_USE_BUNDLE = Sys.iswindows()
 const _JULIAC_ENTRYPOINT_EXPR = "using JuliaC; if isdefined(JuliaC, :main); JuliaC.main(ARGS); else JuliaC._main_cli(ARGS); end"
 
 # Pkg.test() sets JULIA_LOAD_PATH restrictively, which prevents subprocesses
-# from finding stdlib packages like Pkg.  Remove it so subprocesses get the
+# from finding stdlib packages like Pkg. Remove it so subprocesses get the
 # default load path.
 function _clean_cmd(cmd::Cmd)
     env = Dict{String,String}(k => v for (k, v) in ENV if k != "JULIA_LOAD_PATH")
@@ -23,7 +22,7 @@ end
 
 function _setup_trim_env()
     # JuliaC requires Julia 1.12+ and can't be in [extras] without breaking
-    # Pkg.test() on older Julia versions.  Create a temp project that dev's
+    # Pkg.test() on older Julia versions. Create a temp project that develops
     # Decimals from the local checkout and adds JuliaC + Parsers.
     pkg_path = normpath(joinpath(@__DIR__, ".."))
     env_path = mktempdir()
@@ -169,7 +168,7 @@ end
 
 @testset "Trim compile" begin
     if !Base.get_bool_env("DECIMALS_RUN_TRIM_TESTS", true)
-        println("[trim] skip DECIMALS_RUN_TRIM_TESTS=false: user requested to skip trim compilation tests")
+        println("[trim] skip DECIMALS_RUN_TRIM_TESTS=false: trim compilation tests disabled")
         @test true
     elseif !_TRIM_JULIA_SUPPORTED
         println("[trim] skip Julia < 1.12: JuliaC trim compilation is unavailable")

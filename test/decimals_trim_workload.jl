@@ -6,9 +6,9 @@
 # and random generation — so a trimmed executable proves the whole surface is
 # statically compilable.
 #
-# Deliberately excluded: BigFloat/BigInt escape hatches (`big`, the Printf
-# %f/%e/%g extension) — GMP/MPFR are not trim-friendly and those are cold
-# convenience paths, not wire/compute paths.
+# Excluded: the BigFloat/BigInt escape hatches (`big`, the Printf %f/%e/%g
+# extension). GMP/MPFR are not trim-friendly, and those are cold convenience
+# paths rather than wire/compute paths.
 
 using Decimals, Parsers
 

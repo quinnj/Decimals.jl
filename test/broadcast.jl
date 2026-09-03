@@ -68,7 +68,7 @@ end
         @test c[i] === a[i] + bmix[i]
         @test d[i] === a[i] - bmix[i]
     end
-    # genuine overflow of the promoted type throws like the scalar path
+    # overflow of the promoted type throws like the scalar path
     amax = fill(typemax(Decimal64{2}), 8)
     bmax = fill(typemax(Decimal{18,3,Int64}), 8)
     @test_throws OverflowError amax .+ bmax
