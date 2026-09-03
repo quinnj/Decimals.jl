@@ -1,10 +1,9 @@
-# Columnar broadcast kernels. Elementwise `a .+ b`, `a .- b`, `a .* b` over
-# same-shaped Vectors get block-checked vectorizable loops: compute unchecked
-# per lane, OR an overflow flag across the array, throw once at the end (the
-# CedarDB pattern — same user-visible exception as the scalar path, no
-# per-element branches). Anything else (mixed lengths, views, fused
-# expressions, wider products) falls back to the generic scalar machinery,
-# which is correct just not SIMD.
+# Columnar broadcast kernels. Elementwise `a .+ b`, `a .- b` and `a .* b` over
+# same-shaped Vectors get block-checked vectorizable loops: each lane computes
+# unchecked and ORs into one overflow flag, which is thrown once at the end, so
+# there are no per-element branches and the exception is the one the scalar path
+# raises. Everything else (mixed lengths, views, fused expressions, wider
+# products) falls back to the generic scalar machinery.
 
 using Base.Broadcast: Broadcasted, DefaultArrayStyle
 
@@ -18,7 +17,7 @@ function _bcaddsub(a::Vector{Decimal{P, S, T}}, b::Vector{Decimal{P, S, T}},
     mm = _maxmag(Decimal{P, S, T}) % T
     bad = false
     if _wrapfree(Decimal{P, S, T})
-        # no wrap possible (see _wrapfree): one unsigned range test per lane
+        # wrap-free tier: one unsigned range test per lane
         @inbounds @simd for i in 1:n
             r = sub ? a[i].unscaled - b[i].unscaled : a[i].unscaled + b[i].unscaled
             bad |= _outofrange(r, Decimal{P, S, T})
@@ -48,10 +47,10 @@ for (op, subval) in ((:+, false), (:-, true))
     end
 end
 
-# elementwise product: the exact result always fits the promoted type
-# (P1 + P2 <= 76 digits, which every storage pairing up to Int128 x Int128
-# holds in Int256), so no checks at all — widening SIMD for narrow tiers, a
-# sign-magnitude 256-bit widening loop for the Int128 tier
+# Elementwise product: the exact result always fits the result type, since
+# P1 + P2 <= 76 digits and Int256 holds that for every storage pairing up to
+# Int128 x Int128. So the loop needs no checks: a widening SIMD multiply for the
+# narrow tiers, a sign-magnitude 256-bit multiply for the Int128 tier.
 function _bcmul(a::Vector{Decimal{P1, S1, T1}},
                 b::Vector{Decimal{P2, S2, T2}}) where {P1, S1, T1 <: Union{Int32, Int64, Int128},
                                                        P2, S2, T2 <: Union{Int32, Int64, Int128}}
@@ -126,10 +125,10 @@ for (op, subval) in ((:+, false), (:-, true))
     end
 end
 
-# Float64 conversion over a column: every |unscaled| <= 2^53 converts exactly
-# and the division by 10^S (S <= 22, exact) rounds correctly, so the loop is
-# a plain convert-and-divide that vectorizes; the rare wider elements are
-# recomputed afterwards through the exact scalar path.
+# Float64 conversion over a column: an |unscaled| <= 2^53 converts exactly and
+# the division by 10^S (S <= 22, also exact) is correctly rounded, so the loop is
+# a convert-and-divide that vectorizes. Any wider elements are recomputed
+# afterwards through the exact scalar path.
 const _F64EXACT = 9007199254740992  # 2^53
 function _tofloat64vec(v::AbstractVector{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}}
     n = length(v)

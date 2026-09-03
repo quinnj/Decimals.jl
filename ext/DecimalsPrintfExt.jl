@@ -1,9 +1,7 @@
-# Printf integration:
-# - %d gets Rational-equivalent behavior (exact-or-InexactError) via toint.
-# - %f/%e/%g route through a high-precision BigFloat instead of the default
-#   Float64(x), so wide decimals print their true digits (the default tofloat
-#   silently rounds anything beyond 17 significant digits). 1024 bits covers
-#   the 78-digit value range plus any sane fractional format width.
+# Printf integration. %d takes the same exact-or-InexactError route as a
+# Rational. %f/%e/%g go through a 1024-bit BigFloat rather than Printf's default
+# Float64(x), which would silently round away everything past 17 significant
+# digits; 1024 bits covers the 78-digit value range and the format's width.
 module DecimalsPrintfExt
 
 using Decimals
