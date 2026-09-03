@@ -144,5 +144,3 @@ function Base.string(x::AbstractDecimal)
     writedecimal!(out, 1, x)
     return String(out)
 end
-
-_printdecimal(io::IO, x::AbstractDecimal) = print(io, string(x))

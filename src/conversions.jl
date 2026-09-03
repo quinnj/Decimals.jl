@@ -408,8 +408,8 @@ _round(::Type{Decimal{P, S, T}}, x::DecimalValue, mode::RoundingMode) where {P, 
 
 Move a decimal to another scale, rounding with `mode` when the target scale
 cannot hold `x` exactly. The first form targets a `Decimal` type `D` (whose
-scale is a type parameter); the second re-scales a [`DecimalValue`](@ref) in
-place to the runtime scale `s`, which must be in `0:16383`.
+scale is a type parameter); the second returns a [`DecimalValue`](@ref) at the
+runtime scale `s`, which must be in `0:16383`.
 
 `mode` is any of `RoundNearest` (half-even, the default),
 `RoundNearestTiesAway`, `RoundNearestTiesUp`, `RoundToZero`, `RoundFromZero`,
@@ -494,11 +494,11 @@ Base.Rational(x::DecimalValue) = Rational{BigInt}(x)
 const _FPOW10 = Float64[10.0^k for k in 0:22]
 
 # Correctly-rounded u/10^s at F's precision without MPFR or BigInt:
-# u/10^s = (u/5^s) * 2^-s, and dividing by 5^s (<= 203 bits) leaves room to
-# pre-shift the numerator so the quotient carries precision+1..+2 bits. One
-# 256-bit division, then standard guard/sticky assembly. Returns (value, ok);
-# ok=false defers to the exact slow path (overflow/underflow/subnormal edges,
-# scales beyond the 5^k table, numerators that cannot be pre-shifted).
+# u/10^s = (u/5^s) * 2^-s, with the numerator pre-shifted so that the quotient
+# carries precision+1..+2 bits, then the standard guard/sticky assembly.
+# Returns (value, ok); ok=false defers to the exact slow path (overflow,
+# underflow and subnormal edges, scales beyond the 5^k table, and numerators
+# that cannot be pre-shifted).
 @inline function _tofloatdiv(::Type{F}, m::UInt256, s::Int,
                              neg::Bool) where {F <: AbstractFloat}
     p = precision(F)

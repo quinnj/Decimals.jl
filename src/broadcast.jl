@@ -1,9 +1,9 @@
 # Columnar broadcast kernels. Elementwise `a .+ b`, `a .- b` and `a .* b` over
 # same-shaped Vectors get block-checked vectorizable loops: each lane computes
-# unchecked and ORs into one overflow flag, which is thrown once at the end, so
-# there are no per-element branches and the exception is the one the scalar path
-# raises. Everything else (mixed lengths, views, fused expressions, wider
-# products) falls back to the generic scalar machinery.
+# unchecked and ORs into one overflow flag, so there are no per-element branches
+# and a bad column still raises OverflowError, once, at the end. Everything else
+# (mixed lengths, views, fused expressions, wider products) falls back to the
+# generic scalar machinery.
 
 using Base.Broadcast: Broadcasted, DefaultArrayStyle
 
@@ -83,8 +83,9 @@ function Base.copy(bc::Broadcasted{DefaultArrayStyle{1}, <:Any, typeof(*),
     return _bcmul(a, b)
 end
 
-# mixed-scale, same-storage add/sub: align by a compile-time constant power
-# of ten with a vectorizable bound mask, then the checked-add pattern
+# mixed-scale, same-storage add/sub: bring both sides to the common scale by
+# the constant power of ten each scale difference implies, testing the
+# pre-multiply bound per lane, then run the same block-checked add
 function _bcaddsubmix(a::Vector{Decimal{P1, S1, T}}, b::Vector{Decimal{P2, S2, T}},
                       ::Val{sub}) where {P1, S1, P2, S2, T <: StorageInt, sub}
     RT = promote_type(Decimal{P1, S1, T}, Decimal{P2, S2, T})
@@ -125,11 +126,12 @@ for (op, subval) in ((:+, false), (:-, true))
     end
 end
 
+const _F64EXACT = 9007199254740992  # 2^53
+
 # Float64 conversion over a column: an |unscaled| <= 2^53 converts exactly and
 # the division by 10^S (S <= 22, also exact) is correctly rounded, so the loop is
 # a convert-and-divide that vectorizes. Any wider elements are recomputed
 # afterwards through the exact scalar path.
-const _F64EXACT = 9007199254740992  # 2^53
 function _tofloat64vec(v::AbstractVector{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}}
     n = length(v)
     dest = Vector{Float64}(undef, n)
