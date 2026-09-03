@@ -4,10 +4,8 @@ on:
   push:
     branches:
       - master
-      - 'takeover-*'
     tags: '*'
   pull_request:
-  workflow_dispatch:
 
 jobs:
   build:

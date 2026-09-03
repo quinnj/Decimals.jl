@@ -55,8 +55,8 @@ Arithmetic
   `checked_neg` / `checked_abs`.
 
 Rounding
-: `round`, `trunc`, `floor`, `ceil` — both the in-type forms (with a `digits`
-  keyword) and the converting forms `round(T, x, mode)`.
+: `round`, `trunc`, `floor`, `ceil`, in both the in-type forms (with a
+  `digits` keyword) and the converting forms `round(T, x, mode)`.
 
 Comparison and hashing
 : `==`, `<`, `<=`, `isless`, `Base.decompose`, `hash`, `signbit`, `iszero`,
@@ -85,7 +85,7 @@ Available when the corresponding package is loaded; see
 : exact `%f` / `%e` / `%g` and exact-or-`InexactError` `%d`.
 
 `JSON.tostring`
-: raw exact-digit JSON numbers (JSON 1.x).
+: JSON numbers carrying the exact digits (JSON 1.x).
 
 `LinearAlgebra` factorizations
 : `lu`, `cholesky`, `qr`, `svd`, `eigen`, `hessenberg`, `schur`, `lq`, `det`,

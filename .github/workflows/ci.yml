@@ -6,9 +6,7 @@ on:
   push:
     branches:
       - master
-      - 'takeover-*'
     tags: '*'
-  workflow_dispatch:
 
 concurrency:
   # Skip intermediate builds: always.
