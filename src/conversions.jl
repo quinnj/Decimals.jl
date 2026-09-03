@@ -1,0 +1,699 @@
+# Conversions between the decimal types and Integer/Rational/AbstractFloat, plus
+# promotion rules. Contract: constructors and `convert` are exact-or-throw
+# (InexactError/OverflowError), except from AbstractFloat, which rounds half-even
+# at the target scale as Base's cross-representation float conversions do;
+# `round(T, x, mode)` is the explicitly-rounding form for every source type.
+
+# round an already-scaled UInt256 magnitude by an arbitrary divisor, with mode
+@inline function _divround(n::UInt256, d::UInt256, neg::Bool, mode::RoundingMode)
+    q, r = _divrem_wide(n, d)
+    r == zero(UInt256) && return (q, false)
+    complement = d - r
+    inc = _roundinc(r < complement, r == complement,
+                    (q & one(UInt256)) != zero(UInt256), neg, mode)
+    return (inc ? q + one(UInt256) : q, true)
+end
+
+@noinline _throwoverflow(DT, x) =
+    throw(OverflowError(string(x, " does not fit in ", DT)))
+@noinline _throwinexact(DT, x) =
+    throw(InexactError(:convert, DT, x))
+
+# finish a Decimal construction from a UInt256 magnitude
+@inline function _fromuval(::Type{Decimal{P, S, T}}, mag::UInt256, neg::Bool,
+                           x) where {P, S, T <: StorageInt}
+    mag > UInt256(_maxmag(Decimal{P, S, T})) && _throwoverflow(Decimal{P, S, T}, x)
+    u = (mag % _utype(T)) % T
+    return reinterpret(Decimal{P, S, T}, neg ? -u : u)
+end
+
+# ---- Integer -> Decimal ----
+
+function Decimal{P, S, T}(x::Integer) where {P, S, T <: StorageInt}
+    neg = x < zero(x)
+    xm = _tomag256(x)
+    mag, ovf = _scaleup(xm, S)
+    ovf && _throwoverflow(Decimal{P, S, T}, x)
+    return _fromuval(Decimal{P, S, T}, mag, neg, x)
+end
+Decimal{P, S, T}(x::Bool) where {P, S, T <: StorageInt} = Decimal{P, S, T}(Int(x))
+
+# magnitude of any integer as UInt256
+@inline _tomag256(x::Union{Int8, Int16, Int32, Int64}) = UInt256(_mag(Int64(x)))
+@inline _tomag256(x::Int128) = UInt256(_mag(x))
+@inline _tomag256(x::Int256) = _mag(x)
+@inline _tomag256(x::Union{Bool, UInt8, UInt16, UInt32, UInt64, UInt128}) = UInt256(x)
+@inline _tomag256(x::UInt256) = x
+@noinline function _tomag256(x::BigInt)
+    m = abs(x)
+    m > _tobig(typemax(UInt256)) && throw(InexactError(:convert, UInt256, x))
+    return _fromfullbig(UInt256, m)
+end
+
+function Decimal{P, S, T}(x::BigInt) where {P, S, T <: StorageInt}
+    mag = abs(x) * big(10)^S
+    mag > _tobig(UInt256(_maxmag(Decimal{P, S, T}))) &&
+        _throwoverflow(Decimal{P, S, T}, x)
+    return _fromuval(Decimal{P, S, T}, _fromfullbig(UInt256, mag), x < 0, x)
+end
+
+# ---- Rational -> Decimal ----
+
+function _fromrational(::Type{Decimal{P, S, T}}, x::Rational, mode) where {P, S, T <: StorageInt}
+    iszero(x.den) && _throwinexact(Decimal{P, S, T}, x)
+    neg = x.num < zero(x.num)
+    n = _tomag256(x.num)
+    d = _tomag256(x.den)
+    num, ovf = _scaleup(n, S)
+    ovf && return _fromrational_big(Decimal{P, S, T}, x, mode)
+    q, inexact = _divround(num, d, neg, mode)
+    (inexact && mode === nothing) && _throwinexact(Decimal{P, S, T}, x)
+    return _fromuval(Decimal{P, S, T}, q, neg, x)
+end
+
+@noinline function _fromrational_big(::Type{Decimal{P, S, T}}, x::Rational,
+                                     mode) where {P, S, T <: StorageInt}
+    num = abs(_tobigsigned(x.num)) * big(10)^S
+    den = abs(_tobigsigned(x.den))
+    q, r = divrem(num, den)
+    if r != 0
+        mode === nothing && _throwinexact(Decimal{P, S, T}, x)
+        neg = x.num < zero(x.num)
+        inc = _roundinc(2r < den, 2r == den, isodd(q), neg, mode)
+        inc && (q += 1)
+    end
+    q > _tobig(UInt256(_maxmag(Decimal{P, S, T}))) && _throwoverflow(Decimal{P, S, T}, x)
+    return _fromuval(Decimal{P, S, T}, _fromfullbig(UInt256, q), x.num < zero(x.num), x)
+end
+
+Decimal{P, S, T}(x::Rational) where {P, S, T <: StorageInt} =
+    _fromrational(Decimal{P, S, T}, x, nothing)
+Decimal{P, S, T}(x::Rational{BigInt}) where {P, S, T <: StorageInt} =
+    _fromrational_big(Decimal{P, S, T}, x, nothing)
+
+# _divround with mode === nothing means "must be exact"
+@inline function _divround(n::UInt256, d::UInt256, neg::Bool, ::Nothing)
+    q, r = _divrem_wide(n, d)
+    return (q, r != zero(UInt256))
+end
+
+# ---- AbstractFloat -> Decimal ----
+
+function _fromfloat(::Type{Decimal{P, S, T}}, x::AbstractFloat,
+                    mode::RoundingMode) where {P, S, T <: StorageInt}
+    isfinite(x) || _throwinexact(Decimal{P, S, T}, x)
+    iszero(x) && return zero(Decimal{P, S, T})
+    num, pow, den = Base.decompose(x)  # x == num * 2^pow / den, den == ±1
+    num isa BigInt && return _fromfloat_big(Decimal{P, S, T}, x, mode)
+    neg = (num < 0) ⊻ (den < 0)
+    if x isa Union{Float16, Float32, Float64} && sizeof(T) <= 16 && S <= 22 && pow < 0
+        return _fromfloat128(Decimal{P, S, T}, UInt128(abs(num)), -pow, neg, x, mode)
+    end
+    m = _tomag256(abs(num))
+    if pow >= 0
+        pow > 255 && _throwoverflow(Decimal{P, S, T}, x)
+        lz = leading_zeros(m)
+        pow > lz && _throwoverflow(Decimal{P, S, T}, x)
+        mag, ovf = _scaleup(m << pow, S)
+        ovf && _throwoverflow(Decimal{P, S, T}, x)
+        return _fromuval(Decimal{P, S, T}, mag, neg, x)
+    end
+    k = -pow
+    if k <= S
+        # exact: u = m * 5^k * 10^(S-k)
+        k > 110 && return _fromfloat_big(Decimal{P, S, T}, x, mode)
+        p5 = _upow5_256(k)
+        hi, lo = _mul256full(m, p5)
+        hi != zero(UInt256) && _throwoverflow(Decimal{P, S, T}, x)
+        mag, ovf = _scaleup(lo, S - k)
+        ovf && _throwoverflow(Decimal{P, S, T}, x)
+        return _fromuval(Decimal{P, S, T}, mag, neg, x)
+    end
+    k > 87 && return _fromfloat_big(Decimal{P, S, T}, x, mode)
+    # u = round(m * 5^k / 10^(k-S)); m*5^k fits 256 bits for k <= 87 (m < 2^53)
+    hi, lo = _mul256full(m, _upow5_256(k))
+    hi != zero(UInt256) && _throwoverflow(Decimal{P, S, T}, x)
+    q, _ = _scaledown(lo, k - S, neg, mode)
+    return _fromuval(Decimal{P, S, T}, q, neg, x)
+end
+
+# Machine floats below 2^53 at scale <= 22 stay in UInt128 arithmetic:
+# |x| = m*2^-k with m < 2^53, so u = round(m*10^S / 2^k) has m*10^S < 2^127
+# and the k dropped low bits decide the rounding exactly.
+@inline function _fromfloat128(::Type{Decimal{P, S, T}}, m::UInt128, k::Int,
+                               neg::Bool, x, mode::RoundingMode) where {P, S, T <: StorageInt}
+    p = m * _upow10(UInt128, S)
+    if k >= 128
+        q = zero(UInt128)
+        inc = _roundinc(true, false, false, neg, mode)
+    else
+        q = p >> k
+        r = p & ((one(UInt128) << k) - one(UInt128))
+        half = one(UInt128) << (k - 1)
+        inc = r != zero(UInt128) && _roundinc(r < half, r == half, isodd(q), neg, mode)
+    end
+    inc && (q += one(UInt128))
+    q > UInt128(_maxmag(Decimal{P, S, T})) && _throwoverflow(Decimal{P, S, T}, x)
+    u = (q % _utype(T)) % T
+    return reinterpret(Decimal{P, S, T}, neg ? -u : u)
+end
+
+@noinline function _fromfloat_big(::Type{Decimal{P, S, T}}, x::AbstractFloat,
+                                  mode::RoundingMode) where {P, S, T <: StorageInt}
+    num, pow, den = Base.decompose(x)
+    neg = (num < 0) ⊻ (den < 0)
+    m = big(abs(num))
+    if pow >= 0
+        mag = (m << pow) * big(10)^S
+    else
+        k = -pow
+        if k <= S
+            mag = m * big(5)^k * big(10)^(S - k)
+        else
+            n = m * big(5)^k
+            d = big(10)^(k - S)
+            q, r = divrem(n, d)
+            if r != 0
+                inc = _roundinc(2r < d, 2r == d, isodd(q), neg, mode)
+                inc && (q += 1)
+            end
+            mag = q
+        end
+    end
+    mag > _tobig(UInt256(_maxmag(Decimal{P, S, T}))) && _throwoverflow(Decimal{P, S, T}, x)
+    return _fromuval(Decimal{P, S, T}, _fromfullbig(UInt256, mag), neg, x)
+end
+
+Decimal{P, S, T}(x::AbstractFloat) where {P, S, T <: StorageInt} =
+    _fromfloat(Decimal{P, S, T}, x, RoundNearest)
+
+# ---- Decimal <-> Decimal, DecimalValue ----
+
+# core rescaling of (unscaled, scale) into a target Decimal type;
+# mode === nothing means exact-or-throw
+function _torescaled(::Type{Decimal{P, S, T}}, u::Integer, s::Int, mode,
+                     x) where {P, S, T <: StorageInt}
+    neg = u < zero(u)
+    m = _tomag256(u)
+    return _torescaled(Decimal{P, S, T}, m, neg, s, mode, x)
+end
+
+function _torescaled(::Type{Decimal{P, S, T}}, m::UInt256, neg::Bool, s::Int,
+                     mode, x) where {P, S, T <: StorageInt}
+    if s <= S
+        mag, ovf = _scaleup(m, S - s)
+        ovf && _throwoverflow(Decimal{P, S, T}, x)
+    else
+        actualmode = mode === nothing ? RoundToZero : mode
+        mag, inexact = _scaledown(m, s - S, neg, actualmode)
+        (inexact && mode === nothing) && _throwinexact(Decimal{P, S, T}, x)
+    end
+    return _fromuval(Decimal{P, S, T}, mag, neg, x)
+end
+
+# non-throwing fit of ±mag*10^-sc (with optional sticky tail) into a target
+# type, for parser integrations: returns (value, ok) with ok=false on overflow.
+# A magnitude that fits the target's own width is scaled at that width, so the
+# common money-string case never touches 256-bit arithmetic.
+@inline function _fitnarrow(::Type{Decimal{P, S, T}}, m::U, sc::Int, neg::Bool,
+                            mode::RoundingMode) where {P, S, T <: StorageInt, U <: Unsigned}
+    if sc > S
+        q, _ = _scaledown(m, sc - S, neg, mode)
+    else
+        q, ovf = _scaleup(m, S - sc)
+        ovf && return (zero(Decimal{P, S, T}), false)
+    end
+    q > _maxmag(Decimal{P, S, T}) && return (zero(Decimal{P, S, T}), false)
+    u = (q % _utype(T)) % T
+    return (reinterpret(Decimal{P, S, T}, neg ? -u : u), true)
+end
+
+@inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt256, sc::Int,
+                             neg::Bool, sticky::Bool,
+                             mode::RoundingMode) where {P, S, T <: StorageInt}
+    U = _utype(T)
+    if !sticky && mag <= UInt256(typemax(U))
+        return _fitnarrow(Decimal{P, S, T}, (mag % U), sc, neg, mode)
+    end
+    if sc > S
+        q, _ = _scaledown(mag, sc - S, neg, mode, sticky)
+    else
+        q, ovf = _scaleup(mag, S - sc)
+        ovf && return (zero(Decimal{P, S, T}), false)
+        if sticky
+            inc = _roundinc(true, false, (q & one(UInt256)) != zero(UInt256), neg, mode)
+            inc && (q += one(UInt256))
+        end
+    end
+    q > UInt256(_maxmag(Decimal{P, S, T})) && return (zero(Decimal{P, S, T}), false)
+    u = (q % _utype(T)) % T
+    return (reinterpret(Decimal{P, S, T}, neg ? -u : u), true)
+end
+
+# UInt64/UInt128-magnitude entries: the parser fast paths land here directly.
+# Targets at or below the magnitude's width fit at that width (bounds checked
+# against maxmag); wider targets convert up so scale-up has the full target
+# width to work in.
+@inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt64, sc::Int,
+                             neg::Bool, sticky::Bool,
+                             mode::RoundingMode) where {P, S, T <: StorageInt}
+    sticky && return _fitdecimal(Decimal{P, S, T}, UInt256(mag), sc, neg, sticky, mode)
+    if sizeof(T) <= 8
+        return _fitnarrow(Decimal{P, S, T}, mag, sc, neg, mode)
+    end
+    return _fitnarrow(Decimal{P, S, T}, _utype(T)(mag), sc, neg, mode)
+end
+
+@inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt128, sc::Int,
+                             neg::Bool, sticky::Bool,
+                             mode::RoundingMode) where {P, S, T <: StorageInt}
+    sticky && return _fitdecimal(Decimal{P, S, T}, UInt256(mag), sc, neg, sticky, mode)
+    if sizeof(T) <= 16
+        return _fitnarrow(Decimal{P, S, T}, mag, sc, neg, mode)
+    end
+    return _fitnarrow(Decimal{P, S, T}, _utype(T)(mag), sc, neg, mode)
+end
+
+@inline function _fitvalue(::Type{DecimalValue{T}}, mag::UInt256, sc::Int,
+                           neg::Bool, sticky::Bool) where {T <: StorageInt}
+    sticky && return (zero(DecimalValue{T}), false)
+    if sc < 0
+        mag, ovf = _scaleup(mag, -sc)
+        ovf && return (zero(DecimalValue{T}), false)
+        sc = 0
+    end
+    sc > 16383 && return (zero(DecimalValue{T}), false)
+    _fitsigned(mag, neg, T) || return (zero(DecimalValue{T}), false)
+    u = (mag % _utype(T)) % T
+    return (DecimalValue{T}(neg ? -u : u, sc), true)
+end
+
+Decimal{P, S, T}(x::Decimal) where {P, S, T <: StorageInt} =
+    _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), nothing, x)
+Decimal{P, S, T}(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = x
+Decimal{P, S, T}(x::DecimalValue) where {P, S, T <: StorageInt} =
+    _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), nothing, x)
+
+Decimal{P, S}(x::Real) where {P, S} = Decimal{P, S, _storagetype(P)}(x)
+
+function DecimalValue{T}(x::Decimal) where {T <: StorageInt}
+    return DecimalValue{T}(convert(T, x.unscaled), scale(x))
+end
+DecimalValue(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = DecimalValue{T}(x.unscaled, S)
+DecimalValue{T}(x::DecimalValue) where {T <: StorageInt} =
+    DecimalValue{T}(convert(T, x.unscaled), x.scale)
+DecimalValue{T}(x::DecimalValue{T}) where {T <: StorageInt} = x
+
+DecimalValue{T}(x::Integer) where {T <: StorageInt} = DecimalValue{T}(convert(T, x), 0)
+DecimalValue{T}(x::Bool) where {T <: StorageInt} = DecimalValue{T}(T(x), 0)
+
+function DecimalValue{T}(x::Rational) where {T <: StorageInt}
+    iszero(x.den) && _throwinexact(DecimalValue{T}, x)
+    d = x.den
+    a = trailing_zeros(d)
+    rest = d >> a
+    b = 0
+    while rest % 5 == zero(rest)
+        rest = div(rest, 5)
+        b += 1
+    end
+    isone(rest) || _throwinexact(DecimalValue{T}, x)
+    s = max(a, b)
+    # u = num * 2^(s-a) * 5^(s-b)
+    n = _tomag256(x.num)
+    sa = s - a
+    lz = leading_zeros(n)
+    sa > lz && _throwoverflow(DecimalValue{T}, x)
+    n <<= sa
+    sb = s - b
+    if sb > 0
+        sb > 110 && _throwoverflow(DecimalValue{T}, x)
+        hi, lo = _mul256full(n, _upow5_256(sb))
+        hi == zero(UInt256) || _throwoverflow(DecimalValue{T}, x)
+        n = lo
+    end
+    neg = x.num < zero(x.num)
+    !_fitsigned(n, neg, T) && _throwoverflow(DecimalValue{T}, x)
+    u = (n % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, s)
+end
+
+function DecimalValue{T}(x::AbstractFloat) where {T <: StorageInt}
+    isfinite(x) || _throwinexact(DecimalValue{T}, x)
+    iszero(x) && return zero(DecimalValue{T})
+    num, pow, den = Base.decompose(x)
+    neg = (num < 0) ⊻ (den < 0)
+    # normalize: fold the mantissa's trailing 2-factors into the exponent so
+    # the resulting scale is minimal
+    tz = trailing_zeros(num)
+    num >>= tz
+    pow += tz
+    m = _tomag256(abs(num))
+    if pow >= 0
+        lz = leading_zeros(m)
+        pow > lz && _throwoverflow(DecimalValue{T}, x)
+        m <<= pow
+        s = 0
+    else
+        k = -pow
+        k > 110 && _throwoverflow(DecimalValue{T}, x)
+        hi, lo = _mul256full(m, _upow5_256(k))
+        hi == zero(UInt256) || _throwoverflow(DecimalValue{T}, x)
+        m = lo
+        s = k
+    end
+    !_fitsigned(m, neg, T) && _throwoverflow(DecimalValue{T}, x)
+    u = (m % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, s)
+end
+
+# unqualified defaults: floats and rationals convert exactly, which usually
+# needs wide storage (the exact decimal of a Float64 runs to 50+ digits)
+DecimalValue(x::AbstractFloat) = DecimalValue{Int256}(x)
+DecimalValue(x::Rational) = DecimalValue{Int256}(x)
+DecimalValue(x::Integer) = DecimalValue{Int64}(x)
+
+# ---- rounding conversions ----
+
+Base.round(::Type{DT}, x::Real,
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
+# disambiguate against Base round(::Type, ::Rational[, mode])
+Base.round(::Type{DT}, x::Rational{I},
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal, I} =
+    _round(DT, x, mode)
+Base.round(::Type{DT}, x::Rational{Bool},
+           mode::RoundingMode=RoundNearest) where {DT <: Decimal} =
+    _round(DT, x, mode)
+
+# fill in the storage type when the target is written Decimal{P,S}
+_round(::Type{Decimal{P, S}}, x, mode::RoundingMode) where {P, S} =
+    _round(Decimal{P, S, _storagetype(P)}, x, mode)
+
+_round(::Type{Decimal{P, S, T}}, x::Rational, mode::RoundingMode) where {P, S, T <: StorageInt} =
+    _fromrational(Decimal{P, S, T}, x, mode)
+_round(::Type{Decimal{P, S, T}}, x::Rational{BigInt}, mode::RoundingMode) where {P, S, T <: StorageInt} =
+    _fromrational_big(Decimal{P, S, T}, x, mode)
+_round(::Type{Decimal{P, S, T}}, x::AbstractFloat, mode::RoundingMode) where {P, S, T <: StorageInt} =
+    _fromfloat(Decimal{P, S, T}, x, mode)
+_round(::Type{Decimal{P, S, T}}, x::Integer, mode::RoundingMode) where {P, S, T <: StorageInt} =
+    Decimal{P, S, T}(x)
+_round(::Type{Decimal{P, S, T}}, x::Decimal, mode::RoundingMode) where {P, S, T <: StorageInt} =
+    _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), mode, x)
+_round(::Type{Decimal{P, S, T}}, x::DecimalValue, mode::RoundingMode) where {P, S, T <: StorageInt} =
+    _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), mode, x)
+
+"""
+    rescale(D::Type{<:Decimal}, x, mode=RoundNearest) -> D
+    rescale(x::DecimalValue, s::Integer, mode=RoundNearest) -> DecimalValue
+
+Move a decimal to another scale, rounding with `mode` when the target scale
+cannot hold `x` exactly. The first form targets a `Decimal` type `D` (whose
+scale is a type parameter); the second returns a [`DecimalValue`](@ref) at the
+runtime scale `s`, which must be in `0:16383`.
+
+`mode` is any of `RoundNearest` (half-even, the default),
+`RoundNearestTiesAway`, `RoundNearestTiesUp`, `RoundToZero`, `RoundFromZero`,
+`RoundDown`, `RoundUp`. Rounding *up* in scale is always exact, so `mode` only
+matters when digits are dropped; overflowing the target's precision still
+throws `OverflowError`.
+
+`convert`/constructors are the exact-or-throw counterpart, and
+`round(D, x, mode)` is the same operation spelled Base's way.
+
+```jldoctest
+julia> rescale(Decimal64{2}, Decimal64{4}("1.2356"), RoundUp)
+1.24
+
+julia> rescale(DecimalValue(12345, 3), 1)
+12.3
+```
+"""
+rescale(::Type{DT}, x::AbstractDecimal,
+        mode::RoundingMode=RoundNearest) where {DT <: Decimal} = _round(DT, x, mode)
+
+function rescale(x::DecimalValue{T}, s::Integer,
+                 mode::RoundingMode=RoundNearest) where {T <: StorageInt}
+    0 <= s <= 16383 ||
+        throw(ArgumentError("DecimalValue scale must be in 0:16383, got $s"))
+    target = Int(s)
+    target == scale(x) && return x
+    neg = _isneg(x)
+    m = _tomag256(x.unscaled)
+    if target > scale(x)
+        mag, ovf = _scaleup(m, target - scale(x))
+        ovf && _throwoverflow(DecimalValue{T}, x)
+    else
+        mag, _ = _scaledown(m, scale(x) - target, neg, mode)
+    end
+    !_fitsigned(mag, neg, T) && _throwoverflow(DecimalValue{T}, x)
+    u = (mag % _utype(T)) % T
+    return DecimalValue{T}(neg ? -u : u, target)
+end
+
+# ---- Decimal -> Integer ----
+
+function _tointeger(::Type{I}, x::AbstractDecimal, mode) where {I}
+    neg = _isneg(x)
+    actualmode = mode === nothing ? RoundToZero : mode
+    q, inexact = _scaledown(_tomag256(x.unscaled), scale(x), neg, actualmode)
+    (inexact && mode === nothing) && _throwinexact(I, x)
+    # no magnitude exceeds 2^255, so the two's-complement round-trip is exact
+    sv = q % Int256
+    return convert(I, neg ? -sv : sv)
+end
+
+(::Type{I})(x::AbstractDecimal) where {I <: Integer} = _tointeger(I, x, nothing)
+# the abstract target yields the storage tier's machine integer, not Int256
+Base.Integer(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = _tointeger(T, x, nothing)
+Base.Integer(x::DecimalValue{T}) where {T <: StorageInt} = _tointeger(T, x, nothing)
+Base.Bool(x::AbstractDecimal) = _tointeger(Bool, x, nothing)
+Base.round(::Type{I}, x::AbstractDecimal,
+           mode::RoundingMode=RoundNearest) where {I <: Integer} =
+    _tointeger(I, x, mode)
+Base.trunc(::Type{I}, x::AbstractDecimal) where {I <: Integer} =
+    _tointeger(I, x, RoundToZero)
+Base.floor(::Type{I}, x::AbstractDecimal) where {I <: Integer} =
+    _tointeger(I, x, RoundDown)
+Base.ceil(::Type{I}, x::AbstractDecimal) where {I <: Integer} =
+    _tointeger(I, x, RoundUp)
+
+# ---- Decimal -> Rational ----
+
+function Base.Rational{I}(x::AbstractDecimal) where {I <: Integer}
+    num = _tobigsigned(x.unscaled)
+    den = big(10)^scale(x)
+    factor = gcd(abs(num), den)
+    return convert(I, div(num, factor)) // convert(I, div(den, factor))
+end
+Base.Rational(x::Decimal{P, S, T}) where {P, S, T <: StorageInt} = Rational{T}(x)
+Base.Rational(x::DecimalValue) = Rational{BigInt}(x)
+
+# ---- Decimal -> AbstractFloat ----
+
+# 10^k exactly representable as Float64, k in 0:22
+const _FPOW10 = Float64[10.0^k for k in 0:22]
+
+# Correctly-rounded u/10^s at F's precision without MPFR or BigInt:
+# u/10^s = (u/5^s) * 2^-s, with the numerator pre-shifted so that the quotient
+# carries precision+1..+2 bits, then the standard guard/sticky assembly.
+# Returns (value, ok); ok=false defers to the exact slow path (overflow,
+# underflow and subnormal edges, scales beyond the 5^k table, and numerators
+# that cannot be pre-shifted).
+@inline function _tofloatdiv(::Type{F}, m::UInt256, s::Int,
+                             neg::Bool) where {F <: AbstractFloat}
+    p = precision(F)
+    d5 = _upow5_256(s)
+    b = 256 - leading_zeros(m)
+    B5 = 256 - leading_zeros(d5)
+    t = (p + 1) - (b - B5)
+    sticky = false
+    num = m
+    if t >= 0
+        b + t > 256 && return (zero(F), false)
+        num <<= t
+    else
+        sh = -t
+        sticky = (num & ((UInt256(1) << sh) - one(UInt256))) != zero(UInt256)
+        num >>= sh
+    end
+    # divide by 5^s in <= 27-factor chunks: each divisor fits one limb, so
+    # every step is reciprocal 2-by-1 instead of multi-limb Knuth. Exact:
+    # floor(floor(n/a)/b) == floor(n/(a*b)), and the remainders only feed
+    # sticky, which needs no cross-chunk reconstruction.
+    q = num
+    left = s
+    while left > 27
+        q, r1 = _divrem_by1(q, UInt64(5)^27)
+        sticky |= r1 != zero(UInt256)
+        left -= 27
+    end
+    if left > 0
+        q, r2 = _divrem_by1(q, UInt64(5)^left)
+        sticky |= r2 != zero(UInt256)
+    end
+    mant = q % UInt64  # p+1..p+2 bits by construction
+    excess = (64 - leading_zeros(mant)) - p
+    half = one(UInt64) << (excess - 1)
+    dropped = mant & ((one(UInt64) << excess) - one(UInt64))
+    mant >>>= excess
+    if dropped > half || (dropped == half && (sticky || isodd(mant)))
+        mant += one(UInt64)
+        if mant == one(UInt64) << p
+            mant >>>= 1
+            excess += 1
+        end
+    end
+    e2 = excess - t - s  # value = mant * 2^e2, mant has exactly p bits
+    efin = e2 + p - 1
+    (exponent(floatmin(F)) <= efin <= exponent(floatmax(F))) || return (zero(F), false)
+    v = ldexp(F(mant), e2)
+    return (neg ? -v : v, true)
+end
+
+function _tofloat(::Type{F}, u::Integer, s::Int) where {F <: AbstractFloat}
+    # Float64 only, since narrowing afterwards would double-round: numerator and
+    # denominator are both exact, so the single division is correctly rounded
+    if F === Float64 && s <= 22 && -9007199254740992 <= u <= 9007199254740992
+        return Float64(Int64(u)) / @inbounds(_FPOW10[s + 1])
+    end
+    iszero(u) && return zero(F)
+    if 0 <= s <= 110
+        v, ok = _tofloatdiv(F, _tomag256(u), s, u < zero(u))
+        ok && return v
+    end
+    return _tofloat_slow(F, u, s)
+end
+
+@noinline function _tofloat_slow(::Type{F}, u::Integer, s::Int) where {F}
+    iszero(u) && return zero(F)
+    num = abs(_tobigsigned(u))
+    den = big(10)^s
+    nbits = ndigits(num, base=2)
+    dbits = ndigits(den, base=2)
+    e = nbits - dbits
+    if e >= 0
+        num < den << e && (e -= 1)
+    else
+        num << -e < den && (e -= 1)
+    end
+    p = precision(F)
+    emin = exponent(floatmin(F))
+    emax = exponent(floatmax(F))
+    e > emax && return u < zero(u) ? -F(Inf) : F(Inf)
+    shift = max(e, emin) - (p - 1)
+    if shift >= 0
+        q, r = divrem(num, den << shift)
+        divisor = den << shift
+    else
+        q, r = divrem(num << -shift, den)
+        divisor = den
+    end
+    complement = divisor - r
+    (r > complement || (r == complement && isodd(q))) && (q += 1)
+    value = ldexp(F(q), shift)
+    return u < zero(u) ? -value : value
+end
+
+function Base.BigFloat(
+        x::AbstractDecimal,
+        mode::Base.MPFR.MPFRRoundingMode=Base.MPFR.rounding_raw(BigFloat);
+        precision::Integer=Base.precision(BigFloat))
+    numbig = _tobigsigned(x.unscaled)
+    denbig = big(10)^scale(x)
+    numbits = max(ndigits(abs(numbig), base=2), 2)
+    denbits = max(ndigits(denbig, base=2), 2)
+    num = BigFloat(numbig; precision=numbits)
+    den = BigFloat(denbig; precision=denbits)
+    result = BigFloat(; precision)
+    ccall((:mpfr_div, :libmpfr), Int32,
+          (Ref{BigFloat}, Ref{BigFloat}, Ref{BigFloat}, Int32),
+          result, num, den, mode)
+    return result
+end
+
+_tobigsigned(u::Integer) = big(u)
+_tobigsigned(u::Int256) = (n = _tobig(_mag(u)); u < 0 ? -n : n)
+
+Base.Float64(x::AbstractDecimal) = _tofloat(Float64, x.unscaled, scale(x))
+# at 15 digits or fewer every coefficient is an exact Float64, so the divide
+# alone is the correctly rounded conversion and needs no magnitude test
+@inline function Base.Float64(x::Decimal{P, S, T}) where {P, S, T <: Union{Int32, Int64}}
+    S <= 22 || return _tofloat(Float64, x.unscaled, S)
+    u = x.unscaled
+    if P <= 15 || (-9007199254740992 <= u <= 9007199254740992)
+        return Float64(u) / @inbounds(_FPOW10[S + 1])
+    end
+    return _tofloat(Float64, u, S)
+end
+Base.Float32(x::AbstractDecimal) = _tofloat(Float32, x.unscaled, scale(x))
+Base.Float16(x::AbstractDecimal) = _tofloat(Float16, x.unscaled, scale(x))
+Base.AbstractFloat(x::AbstractDecimal) = Float64(x)
+
+# ---- promotion ----
+
+_intdigits(::Type{Bool}) = 1
+_intdigits(::Type{Int8}) = 3
+_intdigits(::Type{UInt8}) = 3
+_intdigits(::Type{Int16}) = 5
+_intdigits(::Type{UInt16}) = 5
+_intdigits(::Type{Int32}) = 10
+_intdigits(::Type{UInt32}) = 10
+_intdigits(::Type{Int64}) = 19
+_intdigits(::Type{UInt64}) = 20
+_intdigits(::Type{Int128}) = 39
+_intdigits(::Type{UInt128}) = 39
+_intdigits(::Type{Int256}) = 77
+_intdigits(::Type{UInt256}) = 78
+
+# @generated so the computed type is a compile-time constant for inference
+@generated function Base.promote_rule(::Type{Decimal{P1, S1, T1}},
+                                      ::Type{Decimal{P2, S2, T2}}) where {P1, S1, T1 <: StorageInt, P2, S2, T2 <: StorageInt}
+    S = max(S1, S2)
+    P = min(max(P1 - S1, P2 - S2) + S, 76)
+    return :(Decimal{$P, $S, $(_storagetype(P))})
+end
+
+@generated function Base.promote_rule(::Type{Decimal{P, S, T}},
+                                      ::Type{I}) where {P, S, T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256, UInt256}}
+    P2 = min(max(P - S, _intdigits(I)) + S, 76)
+    return :(Decimal{$P2, $S, $(_storagetype(P2))})
+end
+Base.promote_rule(::Type{Decimal{P, S, T}}, ::Type{BigInt}) where {P, S, T <: StorageInt} =
+    Decimal{76, S, Int256}
+
+Base.promote_rule(::Type{<:AbstractDecimal}, ::Type{F}) where {F <: AbstractFloat} = F
+
+Base.promote_rule(::Type{Decimal{P, S, T}}, ::Type{Rational{I}}) where {P, S, T <: StorageInt, I} =
+    Rational{promote_type(T, I)}
+Base.promote_rule(::Type{DecimalValue{T}}, ::Type{Rational{I}}) where {T <: StorageInt, I} =
+    Rational{promote_type(T, I)}
+
+Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{DecimalValue{T2}}) where {T1 <: StorageInt, T2 <: StorageInt} =
+    DecimalValue{promote_type(T1, T2)}
+Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{Decimal{P, S, T}}) where {T1 <: StorageInt, P, S, T <: StorageInt} =
+    DecimalValue{promote_type(T1, T)}
+@generated function Base.promote_rule(::Type{DecimalValue{T}},
+                                      ::Type{I}) where {T <: StorageInt, I <: Union{Bool, Base.BitInteger, Int256, UInt256}}
+    ibits = 8 * sizeof(I) + (I <: Unsigned)
+    bits = min(max(8 * sizeof(T), ibits), 256)
+    PT = bits <= 32 ? Int32 : bits <= 64 ? Int64 : bits <= 128 ? Int128 : Int256
+    return :(DecimalValue{$PT})
+end
+Base.promote_rule(::Type{DecimalValue{T}}, ::Type{BigInt}) where {T <: StorageInt} =
+    DecimalValue{Int256}
+
+# ---- arbitrary-precision escape hatch ----
+
+# big(x) preserves exactness, so the arbitrary-precision form of a decimal is
+# a Rational{BigInt} (a BigFloat would re-round the fractional part in binary)
+Base.big(x::AbstractDecimal) = Rational{BigInt}(x)
+Base.big(::Type{<:AbstractDecimal}) = Rational{BigInt}
+
+# decimals are already rational: with no tolerance this is exact conversion;
+# with a tolerance, approximate through the float path like other Reals
+function Base.rationalize(::Type{T}, x::AbstractDecimal;
+                          tol::Real=zero(T)) where {T <: Integer}
+    iszero(tol) && return Rational{T}(x)
+    return rationalize(T, Float64(x); tol=tol)
+end
+Base.rationalize(x::AbstractDecimal; kwargs...) = rationalize(Int, x; kwargs...)

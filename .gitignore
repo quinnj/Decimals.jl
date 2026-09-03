@@ -1,0 +1,13 @@
+Manifest.toml
+Manifest-v*.toml
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+.DS_Store
+docs/build/
+
+# benchmark harness scratch
+bench/.envs/
+bench/rustbench/target/
+bench/results/*.log
+__pycache__/
