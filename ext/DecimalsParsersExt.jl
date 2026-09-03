@@ -1,23 +1,20 @@
-# Parsers.jl integration: fast byte-level decimal parsing built on the Parsers
-# 3.0 SWAR kernels (_digitrunend/_digits19 gulps), with a single-pass scanner
-# that recognizes the token and accumulates the wide coefficient together —
-# up to 77 retained significant digits plus a sticky tail, so rounding into
-# any Decimal target is correct for arbitrarily long inputs.
+# Parsers.jl integration: byte-level decimal parsing on the Parsers 3 SWAR
+# kernels. Scanners recognize the token and accumulate its coefficient in one
+# pass, retaining 77 significant digits plus a sticky tail, so rounding into any
+# decimal target is correct however long the input is.
 module DecimalsParsersExt
 
 using Decimals
 import Parsers
 
-# The extension targets the Parsers 3 kernels. Parsers 2 can still land in
-# the same environment through packages that have not migrated yet (JSON 1.x
-# pins Parsers 1-2); in that case the extension loads as a no-op so
-# environment resolution succeeds — Base.parse/tryparse on Decimal types
-# keep working, only the Parsers.* entry points are absent.
+# This extension needs the Parsers 3 kernels, but the compat bound admits
+# Parsers 2 so that environments pinned there still resolve. Against Parsers 2
+# the extension loads as a no-op: everything below, including the Base.parse and
+# Base.tryparse methods for decimal types, is absent.
 @static if pkgversion(Parsers) >= v"3"
 
-using Decimals: AbstractDecimal, StorageInt, _fitdecimal, _fitvalue,
-                _storagetype, _ndigits10, _scaleup, _mul256x64, _upow10
-using Decimals: UInt256
+using Decimals: StorageInt, UInt256, _fitdecimal, _fitvalue, _storagetype,
+                _ndigits10, _mul256x64, _upow10
 using Parsers: RC_OK, RC_INVALID, RC_OVERFLOW
 
 # fill in defaulted type parameters for parse targets
@@ -52,7 +49,7 @@ _fullT(::Type{DecimalValue}) = DecimalValue{Int64}
         chunk, _ = Parsers._digits19(buf, k, n)
         if nd + n <= 38
             # stay in 128-bit arithmetic while the magnitude allows
-            m128 = (mag % UInt128) * Decimals._upow10(UInt128, n) + UInt128(chunk)
+            m128 = (mag % UInt128) * _upow10(UInt128, n) + UInt128(chunk)
             mag = UInt256(m128)
         else
             # cannot overflow: nd + n <= 77 digits; 10^n fits a limb (n <= 19)
@@ -82,13 +79,12 @@ end
     return (eneg ? ev : -ev, e3)
 end
 
-# Per-byte whole-token parse for spans of 1..16 bytes: [+-]digits[.digits],
-# two tight loops (integer run, then fraction run) so no per-digit scale
-# bookkeeping. Anything else — exponents, weird bytes, leftovers — defers to
-# the general scanner, which also owns rejecting genuinely invalid input.
-# The branchy per-byte form beats wide SWAR here: short varied tokens keep
-# these branches well-predicted, and there is no clamped-gather tail.
-# Returns (m, sc, neg, handled).
+# Per-byte whole-token parse for spans of 1..16 bytes: [+-]digits[.digits] as
+# two tight loops, an integer run then a fraction run, so no digit does scale
+# bookkeeping. At this length the per-byte loops beat the SWAR path, which would
+# need a clamped gather for the tail. Anything else the loops meet (an exponent,
+# a stray byte, unconsumed input) is left to the wider scanners, which also own
+# rejecting invalid input. Returns (m, sc, neg, handled).
 @inline function _scantiny(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
     @inbounds begin
         b = buf[i]
@@ -133,9 +129,9 @@ end
     return k
 end
 
-# fused digit-run consumer: recognize and accumulate in one pass (the float
-# parser's load8/_alldigits8/_rundigits idiom). Stops at the first non-digit;
-# cnt > 19 signals the caller to fall back to a wider scanner.
+# fused digit-run consumer: recognize and accumulate in one pass, stopping at
+# the first non-digit. cnt > 19 tells the caller to fall back to a wider
+# scanner, since the run no longer fits a UInt64 mantissa.
 @inline function _scanrun64(buf::AbstractVector{UInt8}, k::Int, j::Int,
                             m::UInt64, cnt::Int)
     @inbounds while k <= j && j - k >= 7
@@ -171,10 +167,9 @@ end
     return (m, k, cnt)
 end
 
-# fast scan for tokens whose significant digits fit one UInt64 mantissa
-# (<= 19, the overwhelmingly common case; leading zeros don't count).
-# Returns (m, sc, neg, nextpos, ok, needwide); needwide=true means fall back
-# to a wider scanner.
+# scan for tokens whose significant digits fit one UInt64 mantissa (<= 19;
+# leading zeros do not count). Returns (m, sc, neg, nextpos, ok, needwide),
+# where needwide=true means fall back to a wider scanner.
 @inline function _scandec64(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
     start = i
     i > j && return (UInt64(0), 0, false, start, false, false)
@@ -218,11 +213,11 @@ end
     n <= 19 && return UInt128(Parsers._digits19(buf, k, n)[1])
     hi = Parsers._digits19(buf, k, 19)[1]
     lo = Parsers._digits19(buf, k + 19, n - 19)[1]
-    return UInt128(hi) * Decimals._upow10(UInt128, n - 19) + UInt128(lo)
+    return UInt128(hi) * _upow10(UInt128, n - 19) + UInt128(lo)
 end
 
-# middle tier: tokens whose digits fit UInt128 (<= 38 digits — every common
-# database decimal). Returns (m::UInt128, sc, neg, nextpos, ok, needwide).
+# middle tier: tokens whose digits fit a UInt128 (<= 38, which covers every
+# common database decimal). Returns (m::UInt128, sc, neg, nextpos, ok, needwide).
 @inline function _scandec128(buf::AbstractVector{UInt8}, i::Int, j::Int, dec::UInt8)
     start = i
     Z = zero(UInt128)
@@ -247,7 +242,7 @@ end
     m = intn > 0 ? _digits38(buf, i, intn) : Z
     if haspoint
         if fracn > 0
-            m = m * Decimals._upow10(UInt128, fracn) + _digits38(buf, e1 + 1, fracn)
+            m = m * _upow10(UInt128, fracn) + _digits38(buf, e1 + 1, fracn)
             i = e2
         elseif intn > 0
             i = e1 + 1
@@ -314,6 +309,8 @@ end
 
 @inline _fit(::Type{DT}, mag, sc, neg, sticky,
              mode) where {DT <: Decimal} = _fitdecimal(DT, mag, sc, neg, sticky, mode)
+# a DecimalValue takes the token's own scale, so nothing is rounded and `mode`
+# has nothing to apply; a dropped tail is a failure to fit rather than a rounding
 @inline _fit(::Type{DT}, mag, sc, neg, sticky,
              mode) where {DT <: DecimalValue} =
     _fitvalue(DT, UInt256(mag), sc, neg, sticky)
@@ -328,9 +325,9 @@ end
 @inline function _parsewhole(::Type{DT}, buf::AbstractVector{UInt8}, i::Int, j::Int,
                              dec::UInt8, mode::RoundingMode,
                              ::Val{Throw}) where {DT, Throw}
-    # hot path: unpadded short tokens skip even the whitespace strip — a
-    # padded or exotic input simply fails over to the general scanner, which
-    # strips and re-derives everything
+    # a short unpadded token skips even the whitespace strip; anything the
+    # per-byte loops decline is re-derived from scratch by the wide scanners,
+    # which strip first
     if 0 <= j - i <= 15
         m, sct, negt, handled = _scantiny(buf, i, j, dec)
         if handled
@@ -342,42 +339,16 @@ end
             return v
         end
     elseif j - i <= 41
-        # mid-size tokens have > 19 digits almost surely: skip the doomed
-        # UInt64 scan and go straight to the 38-digit block scanner (which
-        # itself defers to the wide scanner when needed)
+        # a span this long almost always holds more than 19 significant digits,
+        # so skip the UInt64 scan and start at the 38-digit block scanner, which
+        # defers to the 256-bit scanner in turn
         i2, j2 = Parsers._stripws(buf, i, j)
         return _parsewholewide(DT, buf, i, j, i2, j2, dec, mode, Val(Throw), Val(false))
     end
-    # longer tokens have > 38 digits almost surely: skip the block scanner too
+    # longer still: more than 38 significant digits, so skip the block scanner
     i2, j2 = Parsers._stripws(buf, i, j)
     return _parsewholewide(DT, buf, i, j, i2, j2, dec, mode, Val(Throw), Val(true))
 end
-
-@noinline function _parsegeneral(::Type{DT}, buf::AbstractVector{UInt8},
-                                 orig_i::Int, orig_j::Int,
-                                 dec::UInt8, mode::RoundingMode,
-                                 ::Val{Throw}) where {DT, Throw}
-    i, j = Parsers._stripws(buf, orig_i, orig_j)
-    m64, sc, neg, nextpos, ok, needwide = _scandec64(buf, i, j, dec)
-    if !needwide
-        if !(ok && nextpos > j)
-            Throw && _throwinvalid(DT, buf, orig_i, orig_j)
-            return nothing
-        end
-        v, fit = _fit(DT, m64, sc, neg, false, mode)
-        if !fit
-            Throw && _throwrange(DT, buf, orig_i, orig_j)
-            return nothing
-        end
-        return v
-    end
-    return _parsewholewide(DT, buf, orig_i, orig_j, i, j, dec, mode, Val(Throw))
-end
-
-_parsewholewide(::Type{DT}, buf::AbstractVector{UInt8}, orig_i::Int, orig_j::Int,
-                i::Int, j::Int, dec::UInt8, mode::RoundingMode,
-                throw::Val) where {DT} =
-    _parsewholewide(DT, buf, orig_i, orig_j, i, j, dec, mode, throw, Val(false))
 
 # Skip128 = true bypasses the 38-digit block scanner (long tokens)
 @noinline function _parsewholewide(::Type{DT}, buf::AbstractVector{UInt8},
@@ -469,6 +440,13 @@ end
                        rounding, Val(false))
 end
 
+# Base.parse/tryparse on decimal types live here rather than in the core
+# package, so that there is only one parsing implementation
+Base.parse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
+    Parsers.parse(DT, s)
+Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
+    Parsers.tryparse(DT, s)
+
 @inline function _parsenextdec(::Type{DT}, b::AbstractVector{UInt8}, i::Int, j::Int,
                                dec::UInt8, mode::RoundingMode) where {DT}
     m64, sc, neg, nextpos, ok, needwide = _scandec64(b, i, j, dec)
@@ -498,28 +476,19 @@ end
     return (v, nextpos, RC_OK)
 end
 
-# the public Base entry points: Base.parse/tryparse on decimal types are
-# defined here (not in the core package) so there is one parsing machinery
-Base.parse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
-    Parsers.parse(DT, s)
-Base.tryparse(::Type{DT}, s::AbstractString) where {DT <: _DECTARGETS} =
-    Parsers.tryparse(DT, s)
-
-# Keep the rare high-index source type out of the normal specialization —
-# same reasoning as Parsers' own float parsenext: routing both source types
-# through the higher-order _runprefix seam prevents Julia from inlining the
-# short decimal path (measured ~1.9x on money-shaped tokens).
-@noinline function _parsenextdecwindow(::Type{DT}, b::B, i::Int, j::Int,
-                                       dec::UInt8, rounding::RoundingMode) where
-                                       {DT, B <: AbstractVector{UInt8}}
+# Keep the rare high-index source type out of the common specialization:
+# routing both source types through one higher-order seam costs the short
+# decimal path its inlining.
+@noinline function _parsenextdecwindow(::Type{DT}, b::B, i::Int, j::Int, dec::UInt8,
+                                       rounding::RoundingMode) where {DT, B <: AbstractVector{UInt8}}
     window, first, final = Parsers._indexwindow(b, i, j)
     result = _parsenextdec(DT, window, first, final, dec, rounding)
     return Parsers._restoreprefix(window, result)
 end
 
 @inline function Parsers.parsenext(::Type{T}, buf::AbstractVector{UInt8}, pos::Integer,
-                           last::Integer; decimal::Char='.',
-                           rounding::RoundingMode=RoundNearest) where {T <: _DECTARGETS}
+                                   last::Integer; decimal::Char='.',
+                                   rounding::RoundingMode=RoundNearest) where {T <: _DECTARGETS}
     DT = _fullT(T)
     b, i, j = Parsers._prefixbounds(buf, pos, last)
     i > j && return (zero(DT), i, RC_INVALID)

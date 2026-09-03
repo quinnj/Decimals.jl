@@ -1,13 +1,13 @@
-# Printing and simple parsing. print/string give the plain decimal form; show
-# gives a round-trippable typed form. The fast byte-level parser lives in the
-# Parsers.jl extension; the core parser here is the correct simple version
-# with identical semantics.
+# Printing and string parsing. print/string give the plain decimal form, show
+# the round-trippable typed form. `_parsecore` here is the straightforward
+# scanner behind `dec"..."` and the string constructors; the Parsers.jl
+# extension owns the fast byte-level scanners and the public parse/tryparse.
 
 Base.print(io::IO, x::AbstractDecimal) = print(io, string(x))
 
-# Human-facing display: plain positional form normally, scientific notation
-# once the plain form gets unwieldy (deep-scale DecimalValues). string/print
-# always stay positional — they are the wire format.
+# Human-facing display: the plain positional form, switching to scientific
+# notation once that form grows unwieldy (deep-scale DecimalValues). string and
+# print stay positional always, being the wire format.
 function Base.show(io::IO, ::MIME"text/plain", x::AbstractDecimal)
     if decimallength(x) > 44
         _showsci(io, x)
@@ -143,20 +143,10 @@ function _parsecore(s::AbstractString)
     return (mag, sc, neg, sticky, true)
 end
 
-# Parsing rounds (half-even) at the target scale, like parse(Float64, s) and
-# every other cross-representation parse in the ecosystem; exact-scale wire
-# values are unaffected. convert/constructors from other number types remain
-# exact-or-throw, and the Parsers.jl extension exposes rounding= for control.
-# String parsing for the public `parse`/`tryparse` entry points lives in the
-# Parsers extension (`using Parsers`), which owns the fast byte-level
-# scanners; the core keeps only the exact general scanner above for the
-# `dec"..."` literal and the string constructors, so the machinery is not
-# duplicated. A MethodError on parse/tryparse gets a hint pointing there.
-_parsetarget(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} = Decimal{P, S, T}
-_parsetarget(::Type{Decimal{P, S}}) where {P, S} = Decimal{P, S, _storagetype(P)}
-_parsetarget(::Type{DecimalValue{T}}) where {T <: StorageInt} = DecimalValue{T}
-_parsetarget(::Type{DecimalValue}) = DecimalValue{Int64}
-
+# Parsing a string rounds half-even at the target scale, as parse(Float64, s)
+# does; a wire value already at the target scale is unaffected. Constructors and
+# convert from other number types stay exact-or-throw, and the Parsers extension
+# takes a `rounding=` keyword for the modes.
 function _parsestring(::Type{Decimal{P, S, T}}, s::AbstractString) where {P, S, T <: StorageInt}
     mag, sc, neg, sticky, ok = _parsecore(s)
     ok || throw(ArgumentError("invalid decimal string: $(repr(s))"))
@@ -173,16 +163,18 @@ function _parsestring(::Type{DecimalValue{T}}, s::AbstractString) where {T <: St
     return v
 end
 
+# error hint for parse/tryparse called without the Parsers extension loaded
 function _parsehint(io::IO, exc::MethodError, argtypes, kwargs)
-    (exc.f === Base.parse || exc.f === Base.tryparse) || return
-    length(argtypes) == 2 || return
+    (exc.f === Base.parse || exc.f === Base.tryparse) || return nothing
+    length(argtypes) == 2 || return nothing
     T = argtypes[1]
-    (T isa Type && T <: Type && T.parameters[1] <: Union{Decimal, DecimalValue}) || return
+    (T isa Type && T <: Type && T.parameters[1] <: Union{Decimal, DecimalValue}) ||
+        return nothing
     print(io, "\nParsing decimals from strings is provided by the Parsers extension: ",
           "`using Parsers` and then `parse`/`tryparse` (or `Parsers.parse`) work on ",
           "decimal types. Literals (`dec\"1.25\"`) and string constructors ",
           "(`Decimal64{2}(\"1.25\")`) need no extension.")
-    return
+    return nothing
 end
 
 Decimal{P, S, T}(s::AbstractString) where {P, S, T <: StorageInt} = _parsestring(Decimal{P, S, T}, s)

@@ -1,6 +1,5 @@
-# Uniform random decimals in [0, 1) at the type's scale — the natural analogue
-# of rand(Float64). A scale-0 type has only one value in [0, 1).
-import Random
+# Uniform random decimals in [0, 1) at the type's scale, the analogue of
+# rand(Float64). A scale-0 type has only one value in [0, 1).
 
 function Random.rand(rng::Random.AbstractRNG,
                      ::Random.SamplerType{Decimal{P, S, T}}) where {P, S, T <: StorageInt}

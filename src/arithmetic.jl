@@ -1,11 +1,11 @@
 # Arithmetic. Semantics:
-# - `+`/`-` promote both operands (value-preserving promotion) and compute at
-#   that type, CHECKED: a result that no longer fits throws OverflowError.
-#   Arithmetic never invents a wider type than promotion of its inputs, so
-#   folds are type-stable; `sum` widens to the Int128 tier via Base.add_sum.
+# - `+`/`-` promote both operands and compute at the promoted type; a result
+#   that no longer fits throws OverflowError. No operation invents a type wider
+#   than the promotion of its inputs, so folds are type-stable; `sum` is the
+#   exception and widens one tier through Base.add_sum.
 # - `*` is exact: scale S1+S2, precision min(P1+P2, 76), checked.
-# - `/` rounds half-even at scale max(S1,S2); `divide(x, y, mode)` chooses the
-#   mode. No global rounding state anywhere.
+# - `/` rounds half-even at scale max(S1,S2); `divide(x, y, mode)` picks another
+#   mode. There is no global rounding state.
 
 @inline _add_ovf(x::T, y::T) where {T <: Union{Int32, Int64, Int128}} =
     Base.Checked.add_with_overflow(x, y)
@@ -21,19 +21,21 @@ end
     return r, ((x >= 0) != (y >= 0)) & ((r >= 0) != (x >= 0))
 end
 
-# error messages are built from Strings only: varargs `string` over mixed
-# types (and show_default on RoundingMode) is dynamic under juliac --trim
-@inline _opstr(x::AbstractDecimal) = string(x)
+# Overflow messages are assembled by String concatenation: varargs `string` over
+# mixed argument types, and `show` on a RoundingMode, are dynamic calls that
+# `juliac --trim` rejects.
 @inline _opstr(::RoundingMode{M}) where {M} = String(M)
-@inline _opstr(x) = string(x)  # BigInt operands (cold, never in trimmed paths)
+@inline _opstr(x) = string(x)
 @noinline _throwop(op, x, y) =
     throw(OverflowError(String(op) * "(" * _opstr(x) * ", " * _opstr(y) *
                         ") overflows result type"))
 
-# When 2*maxmag fits the storage type (every tier but full-width Int128),
-# |x|,|y| <= maxmag means x ± y cannot wrap, so the only check is the range
-# one: (r + maxmag) as unsigned exceeds 2*maxmag exactly when |r| > maxmag —
-# one add and one compare, no abs, no overflow flag.
+# When 3*maxmag fits the storage type, |x|,|y| <= maxmag means x ± y cannot
+# wrap, so the only remaining check is the range one: (r + maxmag) taken as
+# unsigned exceeds 2*maxmag exactly when |r| > maxmag, which is one add and one
+# compare with no abs and no overflow flag. The two tiers whose maximum
+# precision fills the storage type (Decimal32, Decimal128) fail the test and
+# use the checked kernels below.
 @inline _wrapfree(::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt} =
     _maxmag(Decimal{P, S, T}) <= typemax(T) ÷ 3
 @inline function _outofrange(r::T, ::Type{Decimal{P, S, T}}) where {P, S, T <: StorageInt}
@@ -224,65 +226,39 @@ end
     return _decimalquotient(D, q, qneg, x, y)
 end
 
-@inline function Base.fld(x::D, y::D) where {D <: Decimal}
-    return div(x, y, RoundDown)
-end
-@inline function Base.cld(x::D, y::D) where {D <: Decimal}
-    return div(x, y, RoundUp)
-end
-
-function Base.rem(x::D, y::D) where {D <: Decimal}
-    return _decimalremainder(x, y, RoundToZero)
-end
+@inline Base.fld(x::D, y::D) where {D <: Decimal} = div(x, y, RoundDown)
+@inline Base.cld(x::D, y::D) where {D <: Decimal} = div(x, y, RoundUp)
+Base.rem(x::D, y::D) where {D <: Decimal} = _decimalremainder(x, y, RoundToZero)
 
 for mode in (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
              RoundToZero, RoundFromZero, RoundDown, RoundUp)
     MT = typeof(mode)
     @eval begin
-        @inline function Base.rem(x::D, y::D, ::$MT) where {D <: Decimal}
-            return _decimalremainder(x, y, $mode)
-        end
-        @inline function Base.divrem(x::D, y::D, ::$MT) where {D <: Decimal}
-            return _decimaldivrem(x, y, $mode)
-        end
+        @inline Base.rem(x::D, y::D, ::$MT) where {D <: Decimal} =
+            _decimalremainder(x, y, $mode)
+        @inline Base.divrem(x::D, y::D, ::$MT) where {D <: Decimal} =
+            _decimaldivrem(x, y, $mode)
     end
 end
 
-function Base.rem(x::AbstractDecimal, y::AbstractDecimal)
-    return rem(promote(x, y)...)
-end
-function Base.rem(x::AbstractDecimal, y::Real)
-    return rem(promote(x, y)...)
-end
-function Base.rem(x::Real, y::AbstractDecimal)
-    return rem(promote(x, y)...)
-end
+Base.rem(x::AbstractDecimal, y::AbstractDecimal) = rem(promote(x, y)...)
+Base.rem(x::AbstractDecimal, y::Real) = rem(promote(x, y)...)
+Base.rem(x::Real, y::AbstractDecimal) = rem(promote(x, y)...)
 
 for mode in (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
              RoundToZero, RoundFromZero, RoundDown, RoundUp)
     MT = typeof(mode)
     @eval begin
-        function Base.rem(x::AbstractDecimal, y::AbstractDecimal, ::$MT)
-            return rem(promote(x, y)..., $mode)
-        end
-        function Base.rem(x::AbstractDecimal, y::Real, ::$MT)
-            return rem(promote(x, y)..., $mode)
-        end
-        function Base.rem(x::Real, y::AbstractDecimal, ::$MT)
-            return rem(promote(x, y)..., $mode)
-        end
+        Base.rem(x::AbstractDecimal, y::AbstractDecimal, ::$MT) =
+            rem(promote(x, y)..., $mode)
+        Base.rem(x::AbstractDecimal, y::Real, ::$MT) = rem(promote(x, y)..., $mode)
+        Base.rem(x::Real, y::AbstractDecimal, ::$MT) = rem(promote(x, y)..., $mode)
     end
 end
 
-function Base.mod(x::AbstractDecimal, y::AbstractDecimal)
-    return rem(x, y, RoundDown)
-end
-function Base.mod(x::AbstractDecimal, y::Real)
-    return rem(x, y, RoundDown)
-end
-function Base.mod(x::Real, y::AbstractDecimal)
-    return rem(x, y, RoundDown)
-end
+Base.mod(x::AbstractDecimal, y::AbstractDecimal) = rem(x, y, RoundDown)
+Base.mod(x::AbstractDecimal, y::Real) = rem(x, y, RoundDown)
+Base.mod(x::Real, y::AbstractDecimal) = rem(x, y, RoundDown)
 
 # scale-preserving multiply by a machine integer (multiplying by an integer
 # should not widen the scale the way promotion-based multiply would)
@@ -318,11 +294,11 @@ end
 Base.:*(y::BigInt, x::Decimal) = x * y
 
 function Base.:*(x::DecimalValue{T}, y::_MulInt) where {T <: StorageInt}
-    neg = _isneg(x) != (y < zero(y))
+    neg = _isneg(x) ⊻ (y < zero(y))
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y))
     (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
-    return DecimalValue{T}((_isneg(x) ⊻ (y < zero(y))) ? -u : u, x.scale)
+    return DecimalValue{T}(neg ? -u : u, x.scale)
 end
 Base.:*(y::_MulInt, x::DecimalValue) = x * y
 
@@ -335,8 +311,9 @@ function Base.:*(x::DecimalValue{T}, y::BigInt) where {T <: StorageInt}
 end
 Base.:*(y::BigInt, x::DecimalValue) = x * y
 
-# ---- rounding to integer values within the type ----
+# ---- round/trunc/floor/ceil within the type ----
 
+# number of digits to drop, saturating instead of overflowing on huge `digits`
 @inline function _roundshift(s::Int, digits::Integer)
     digits < s - typemax(Int) && return typemax(Int)
     return s - Int(digits)
@@ -381,9 +358,9 @@ _sumtype(::Type{Decimal{P, S, T}}) where {P, S, T <: Union{Int32, Int64}} =
 _sumtype(::Type{Decimal{P, S, Int128}}) where {P, S} = Decimal{76, S, Int256}
 _sumtype(::Type{Decimal{P, S, Int256}}) where {P, S} = Decimal{P, S, Int256}
 
-# widening a tier (Int32/Int64 -> Int128, Int128 -> Int256) is a pure
-# sign-extension of the unscaled value (same scale, invariant preserved) —
-# no checks needed; a full-width Int128 column then sums without overflow
+# widening a tier (Int32/Int64 -> Int128, Int128 -> Int256) is a sign-extension
+# of the unscaled value at the same scale, so it preserves the invariant and
+# needs no check
 @inline _sumwiden(x::Decimal{P, S, T}) where {P, S, T <: Union{Int32, Int64}} =
     reinterpret(Decimal{38, S, Int128}, Int128(x.unscaled))
 @inline _sumwiden(x::Decimal{P, S, Int128}) where {P, S} =
@@ -396,8 +373,8 @@ Base.reduce_empty(::typeof(Base.add_sum), ::Type{D}) where {D <: Decimal} =
     zero(_sumtype(D))
 
 # Narrow-tier columnar sum: every |unscaled| < 10^18, so an Int128 accumulator
-# cannot overflow below 1.7e20 elements — the adds need no checks and the loop
-# vectorizes. (Int128-tier elements keep the checked add_sum path.)
+# cannot overflow below 1.7e20 elements; the adds need no check and the loop
+# vectorizes. Int128-tier arrays keep the checked add_sum path.
 function Base.sum(v::AbstractArray{Decimal{P, S, T}};
                   dims=:, init=nothing) where {P, S, T <: Union{Int32, Int64}}
     (dims === (:) && init === nothing) ||
@@ -409,9 +386,9 @@ function Base.sum(v::AbstractArray{Decimal{P, S, T}};
     return reinterpret(Decimal{38, S, Int128}, s)
 end
 
-# min/max over a decimal array are min/max over its coefficients, which are
-# ordered identically, so the integer SIMD reductions apply; keyword forms
-# (dims, init) take the generic element-wise path
+# at a fixed scale the coefficients order exactly as the values do, so min/max
+# reduce to Base's integer reductions over the reinterpreted array; keyword
+# forms and empty arrays fall back to the generic element-wise reduction
 for (f, op) in ((:maximum, :max), (:minimum, :min))
     @eval function Base.$f(v::Array{Decimal{P, S, T}}; kw...) where {P, S, T <: StorageInt}
         (isempty(kw) && !isempty(v)) || return Base.mapreduce(identity, $op, v; kw...)
@@ -453,11 +430,11 @@ end
 function Base.:*(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt}
     s = scale(x) + scale(y)
     s <= 16383 || _throwvalop(:*)
-    neg = _isneg(x) != _isneg(y)
+    neg = _isneg(x) ⊻ _isneg(y)
     hi, lo = _mul256full(_tomag256(x.unscaled), _tomag256(y.unscaled))
     (hi != zero(UInt256) || !_fitsigned(lo, neg, T)) && _throwvalop(:*)
     u = (lo % _utype(T)) % T
-    return DecimalValue{T}((_isneg(x) ⊻ _isneg(y)) ? -u : u, s)
+    return DecimalValue{T}(neg ? -u : u, s)
 end
 Base.:*(x::DecimalValue, y::DecimalValue) = *(promote(x, y)...)
 
@@ -492,14 +469,14 @@ end
     xm = abs(_tobigsigned(x.unscaled)) * big(10)^(s - scale(x))
     ym = abs(_tobigsigned(y.unscaled)) * big(10)^(s - scale(y))
     q, r = divrem(xm, ym)
-    if iszero(r)
-        return q, r, false, s
-    end
+    iszero(r) && return (q, r, false, s)
     qneg = _isneg(x) ⊻ _isneg(y)
     complement = ym - r
     inc = _roundinc(r < complement, r == complement, isodd(q), qneg, mode)
-    return inc ? q + 1 : q, inc ? complement : r,
-           inc ? !_isneg(x) : _isneg(x), s
+    return (inc ? q + 1 : q,
+            inc ? complement : r,
+            inc ? !_isneg(x) : _isneg(x),
+            s)
 end
 
 @inline function _valuefrommag(::Type{T}, mag::UInt256, neg::Bool,
@@ -555,37 +532,26 @@ end
     return _valuequotient(T, q, _isneg(x) ⊻ _isneg(y), s)
 end
 
-@inline function Base.div(x::DecimalValue{T}, y::DecimalValue{T},
-                          mode::RoundingMode) where {T <: StorageInt}
-    return _valuequotient(x, y, mode)
-end
-
-@inline function Base.fld(x::DecimalValue{T},
-                          y::DecimalValue{T}) where {T <: StorageInt}
-    return div(x, y, RoundDown)
-end
-@inline function Base.cld(x::DecimalValue{T},
-                          y::DecimalValue{T}) where {T <: StorageInt}
-    return div(x, y, RoundUp)
-end
-
-function Base.rem(x::DecimalValue{T},
-                  y::DecimalValue{T}) where {T <: StorageInt}
-    return _valueremainder(x, y, RoundToZero)
-end
+@inline Base.div(x::DecimalValue{T}, y::DecimalValue{T},
+                 mode::RoundingMode) where {T <: StorageInt} =
+    _valuequotient(x, y, mode)
+@inline Base.fld(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt} =
+    div(x, y, RoundDown)
+@inline Base.cld(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt} =
+    div(x, y, RoundUp)
+Base.rem(x::DecimalValue{T}, y::DecimalValue{T}) where {T <: StorageInt} =
+    _valueremainder(x, y, RoundToZero)
 
 for mode in (RoundNearest, RoundNearestTiesAway, RoundNearestTiesUp,
              RoundToZero, RoundFromZero, RoundDown, RoundUp)
     MT = typeof(mode)
     @eval begin
-        @inline function Base.rem(x::DecimalValue{T}, y::DecimalValue{T},
-                                  ::$MT) where {T <: StorageInt}
-            return _valueremainder(x, y, $mode)
-        end
-        @inline function Base.divrem(x::DecimalValue{T}, y::DecimalValue{T},
-                                     ::$MT) where {T <: StorageInt}
-            return _valuedivrem(x, y, $mode)
-        end
+        @inline Base.rem(x::DecimalValue{T}, y::DecimalValue{T},
+                         ::$MT) where {T <: StorageInt} =
+            _valueremainder(x, y, $mode)
+        @inline Base.divrem(x::DecimalValue{T}, y::DecimalValue{T},
+                            ::$MT) where {T <: StorageInt} =
+            _valuedivrem(x, y, $mode)
     end
 end
 
@@ -597,6 +563,7 @@ divide(x::DecimalValue, y::Decimal, mode::RoundingMode=RoundNearest) =
     divide(promote(x, y)..., mode)
 
 # ---- Base.Checked aliases ----
+
 # Arithmetic is already checked (throws on overflow); the explicit names let
 # generic checked-arithmetic code find these types.
 Base.Checked.checked_add(x::AbstractDecimal, y::AbstractDecimal) = x + y

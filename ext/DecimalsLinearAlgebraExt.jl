@@ -1,12 +1,8 @@
-# Matrix factorizations on decimal matrices route through Float64.
-#
-# Why: generic lu!/qr! and friends divide in place, and fixed-point division
-# rounds at the data's scale — a Decimal{18,2} matrix would give det [1 2; 3 4]
-# = -2.0004 (silent precision loss) or throw InexactError mid-factorization at
-# other scales. Neither is acceptable, and exact factorization is not possible
-# in a fixed-scale type (that is what Rational is for: convert with
-# `map(Rational{BigInt}, A)` when exactness is required). Additive/multiplicative
-# structure (matmul, dot, +, tr, cumsum) stays exact decimal.
+# Matrix factorizations on decimal matrices route through Float64: the generic
+# lu!/qr! kernels divide in place, and fixed-point division would either round
+# silently at the data's scale or throw InexactError partway through. Exact
+# factorization needs `map(Rational{BigInt}, A)`; matmul, dot, +, tr and cumsum
+# stay exact decimal.
 module DecimalsLinearAlgebraExt
 
 using Decimals

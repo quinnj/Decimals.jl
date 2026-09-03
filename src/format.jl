@@ -1,7 +1,7 @@
-# Fast decimal formatting: two-digit lookup pairs, backwards fill, wide
-# magnitudes split into 19-digit chunks with one magic divide each. The
-# byte-level writedecimal! is the wire-writer API (MySQL params, CSV output);
-# string/print build on it.
+# Decimal formatting: two-digit lookup pairs filled back to front, with wide
+# magnitudes split into 19-digit chunks costing one magic divide each. The
+# byte-level `writedecimal!` is the wire-writer entry point (MySQL parameters,
+# CSV fields); `string` and `print` build on it.
 
 const _DIGITPAIRS = codeunits("00010203040506070809" *
                               "10111213141516171819" *
@@ -49,9 +49,8 @@ end
     return (q, r % UInt64)
 end
 
-@inline function _writemag!(buf::AbstractVector{UInt8}, lo::Int, hi::Int, m::UInt64)
-    return _writeu64!(buf, lo, hi, m)
-end
+@inline _writemag!(buf::AbstractVector{UInt8}, lo::Int, hi::Int, m::UInt64) =
+    _writeu64!(buf, lo, hi, m)
 @inline _writemag!(buf::AbstractVector{UInt8}, lo::Int, hi::Int, m::UInt32) =
     _writeu64!(buf, lo, hi, UInt64(m))
 
@@ -145,5 +144,3 @@ function Base.string(x::AbstractDecimal)
     writedecimal!(out, 1, x)
     return String(out)
 end
-
-_printdecimal(io::IO, x::AbstractDecimal) = print(io, string(x))

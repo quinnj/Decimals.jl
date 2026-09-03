@@ -1,17 +1,13 @@
 # 64-bit limb helpers: wide multiplies and limb split/join for UInt128/UInt256.
 # Everything here is allocation-free and libcall-free.
 
-const _M64 = 0xffffffffffffffff
-
 @inline _mulhi(a::UInt32, b::UInt32) = (widemul(a, b) >>> 32) % UInt32
-
 @inline _mulhi(a::UInt64, b::UInt64) = (widemul(a, b) >>> 64) % UInt64
 
 @inline _lo64(x::UInt128) = x % UInt64
 @inline _hi64(x::UInt128) = (x >>> 64) % UInt64
 
 @inline _limbs(x::UInt128) = (_lo64(x), _hi64(x))
-
 @inline _limbs(x::UInt256) =
     (x % UInt64, (x >> 64) % UInt64, (x >> 128) % UInt64, (x >> 192) % UInt64)
 
@@ -101,7 +97,6 @@ end
     hi, _ = _mul256full(a, b)
     return hi
 end
-
 
 # x * m for a limb-sized multiplier whose product is known to fit 256 bits:
 # four 64x64 products with a carry chain instead of a full 256x256 multiply

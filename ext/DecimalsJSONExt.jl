@@ -1,7 +1,7 @@
-# JSON writes decimals as raw JSON numbers with their exact digits via the
-# documented JSON 1.x hook (the default for unknown Reals stringifies
-# convert(Float64, x), silently rounding wide values). The plain positional
-# print form is always a valid JSON number, and decimals are always finite.
+# Write decimals as JSON numbers carrying their exact digits, through the JSON
+# 1.x hook for it; the default for an unknown Real stringifies convert(Float64,
+# x) and would round wide values away. The positional print form is always a
+# valid JSON number, since a decimal is always finite.
 module DecimalsJSONExt
 
 using Decimals

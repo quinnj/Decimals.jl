@@ -1,9 +1,9 @@
-# Compile-time constant tables for the kernel layer. BigInt is used only here,
-# at table-construction time; nothing at runtime touches it.
+# Constant tables for the kernel layer, built once at load time. BigInt appears
+# only here, while the tables are constructed; nothing at runtime touches it.
 
 # build an unsigned value from a BigInt, 64 bits at a time (works for any width)
 function _fromfullbig(::Type{U}, x::BigInt) where {U <: Unsigned}
-    x >= 0 || throw(ArgumentError("negative"))
+    x >= 0 || throw(ArgumentError("expected a non-negative BigInt, got $x"))
     r = zero(U)
     s = 0
     while x > 0
