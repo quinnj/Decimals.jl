@@ -22,7 +22,8 @@ end
     end
     @testset "qualified public API" begin
         @test isdefined(DecimalPublicNamespace, :Decimal)
-        for name in (:DecimalValue, :Decimal32, :Decimal64, :Decimal128, :Decimal256, :divide, :rescale)
+        @test DecimalPublicNamespace.Decimal64 === Decimal64
+        for name in (:DecimalValue, :Decimal32, :Decimal128, :Decimal256, :divide, :rescale)
             @test !isdefined(DecimalPublicNamespace, name)
         end
         x = DecimalValue(125, 2)

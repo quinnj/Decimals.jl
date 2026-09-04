@@ -10,7 +10,7 @@ Read `docs/src/semantics.md` before changing arithmetic or promotion. Read
 - Test optimized array paths against scalar behavior, including exceptions.
 - Test parsing against the independent core scanner or a BigInt oracle.
 - Test equality, hashing, and total ordering together across numeric types.
-- Keep exports limited to `Decimal` and `@dec_str`. Import other names explicitly.
+- Keep exports limited to `Decimal`, `Decimal64`, and `@dec_str`. Import other names explicitly.
 - Reproduce each bug with a public API test before changing its implementation.
 
 Run `julia --project -e 'using Pkg; Pkg.test()'` on Julia 1.10 and a current

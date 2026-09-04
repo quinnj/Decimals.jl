@@ -86,8 +86,8 @@ Decimals.Decimal64{2}("1.00") / zero(Decimals.Decimal64{2})      # DivideError
 At the REPL a decimal displays as plain digits (`1234.56`); `repr` and `show`
 give the round-trippable typed form, `Decimal{18,2,Int64}("1234.56")`.
 
-Only `Decimal` and `@dec_str` are exported. `Decimals.DecimalValue`,
-`Decimals.Decimal32`, `Decimals.Decimal64`, `Decimals.Decimal128`,
+Only `Decimal`, `Decimal64`, and `@dec_str` are exported. `Decimals.DecimalValue`,
+`Decimals.Decimal32`, `Decimals.Decimal128`,
 `Decimals.Decimal256`, `Decimals.rescale`, and `Decimals.divide` are public.
 `Decimals.normalize`, `Decimals.unscaled`, `Decimals.scale`,
 `Decimals.writedecimal!`, `Decimals.decimallength`, and

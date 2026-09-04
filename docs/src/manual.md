@@ -314,7 +314,7 @@ gives one.
 
 ## Integration boundaries
 
-Only `Decimal` and `@dec_str` are exported. Other public names use the
+Only `Decimal`, `Decimal64`, and `@dec_str` are exported. Other public names use the
 `Decimals.` namespace. Explicit imports such as `using Decimals: DecimalValue`
 are supported. `sign(x)` returns the storage integer's sign, so it works even
 when the decimal type cannot hold 1. Mixing a runtime-scale `DecimalValue`
