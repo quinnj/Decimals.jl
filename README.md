@@ -6,11 +6,10 @@
 Exact fixed-point decimal numbers for Julia.
 
 `Decimal{P,S,T}` is an isbits value holding one integer coefficient, with the
-precision `P` and scale `S` fixed in the type. That is the same
-`(precision, scale, storage width)` description Arrow, Parquet, DuckDB,
-PostgreSQL, and MySQL use for a decimal column, so a
-`Vector{Decimal{18,2,Int64}}` already has the layout of a decimal column
-buffer and needs no per-element conversion at a format boundary.
+precision `P` and scale `S` fixed in the type. A vector stores coefficients
+contiguously. Arrow buffers of the same width and host byte order can share
+this layout. Other wire formats require their own encoding. See the
+[integration boundaries](docs/src/manual.md#integration-boundaries).
 
 Arithmetic is exact and checked. `+`, `-`, and `*` neither round nor wrap;
 they throw `OverflowError` when a result does not fit. Where rounding is
@@ -38,29 +37,29 @@ using Decimals
 
 # Construct: from a literal, from a string, or from a wire coefficient
 dec"1.25"                              # Decimal{3,2,Int32}, the minimal fitting type
-Decimal64{2}("1234.56")                # Decimal{18,2,Int64}, a money column
-reinterpret(Decimal64{2}, 123456)      # 1234.56, zero-copy from an Arrow buffer
+Decimals.Decimal64{2}("1234.56")                # Decimal{18,2,Int64}, a money column
+reinterpret(Decimals.Decimal64{2}, 123456)      # 1234.56, zero-copy from an Arrow buffer
 
 # + and - keep the scale and are checked; * is exact; / rounds
-Decimal64{2}("1.20") + Decimal64{2}("0.05")     # 1.25    :: Decimal{18,2,Int64}
-Decimal64{2}("1.25") * Decimal64{3}("2.500")    # 3.12500 :: Decimal{36,5,Int128}
-Decimal64{2}("1.00") / Decimal64{2}("3.00")     # 0.33    (half-even at scale 2)
-sum(fill(Decimal64{2}("0.10"), 10))             # 1.00    :: Decimal{38,2,Int128}
+Decimals.Decimal64{2}("1.20") + Decimals.Decimal64{2}("0.05")     # 1.25    :: Decimal{18,2,Int64}
+Decimals.Decimal64{2}("1.25") * Decimals.Decimal64{3}("2.500")    # 3.12500 :: Decimal{36,5,Int128}
+Decimals.Decimal64{2}("1.00") / Decimals.Decimal64{2}("3.00")     # 0.33    (half-even at scale 2)
+sum(fill(Decimals.Decimal64{2}("0.10"), 10))             # 1.00    :: Decimal{38,2,Int128}
 
 # Rounding is an argument, not a mode to switch on
-divide(Decimal64{2}("1.00"), Decimal64{2}("3.00"), RoundUp)   # 0.34
-rescale(Decimal64{2}, Decimal64{4}("1.2356"), RoundUp)        # 1.24
-round(Decimal64{4}("1.2346"); digits=2)                       # 1.2300
+Decimals.divide(Decimals.Decimal64{2}("1.00"), Decimals.Decimal64{2}("3.00"), RoundUp)   # 0.34
+Decimals.rescale(Decimals.Decimal64{2}, Decimals.Decimal64{4}("1.2356"), RoundUp)        # 1.24
+round(Decimals.Decimal64{4}("1.2346"); digits=2)                       # 1.2300
 
-# DecimalValue carries its scale per value, like a PostgreSQL numeric dscale
-DecimalValue(12345, 3)                 # 12.345
-rescale(DecimalValue(12345, 3), 1)     # 12.3
-Decimals.normalize(dec"1.2000")        # 1.2 :: DecimalValue{Int32}
+# Decimals.DecimalValue carries its scale per value, like a PostgreSQL numeric dscale
+Decimals.DecimalValue(12345, 3)                 # 12.345
+Decimals.rescale(Decimals.DecimalValue(12345, 3), 1)     # 12.3
+Decimals.normalize(dec"1.2000")        # 1.2 :: Decimals.DecimalValue{Int32}
 
 # Printing and conversion
-string(Decimal64{2}("-12.30"))         # "-12.30", always positional
-Float64(Decimal64{2}("1.25"))          # 1.25, correctly rounded
-Rational(Decimal64{2}("1.25"))         # 5//4, exact
+string(Decimals.Decimal64{2}("-12.30"))         # "-12.30", always positional
+Float64(Decimals.Decimal64{2}("1.25"))          # 1.25, correctly rounded
+Rational(Decimals.Decimal64{2}("1.25"))         # 5//4, exact
 ```
 
 Parsing lives in the Parsers extension, so `parse` and `tryparse` need
@@ -69,8 +68,8 @@ Parsing lives in the Parsers extension, so `parse` and `tryparse` need
 ```julia
 using Decimals, Parsers
 
-parse(Decimal64{2}, "1234.567")        # 1234.57, half-even at the target scale
-tryparse(Decimal64{2}, "nope")         # nothing
+parse(Decimals.Decimal64{2}, "1234.567")        # 1234.57, half-even at the target scale
+tryparse(Decimals.Decimal64{2}, "nope")         # nothing
 ```
 
 String constructors and `dec"..."` literals use the package's own exact
@@ -79,16 +78,17 @@ scanner and work without any extension.
 Overflow, inexactness, and division by zero are errors:
 
 ```julia
-typemax(Decimal64{2}) + Decimal64{2}("1.00")   # OverflowError
-convert(Decimal64{2}, Decimal64{4}("1.2345"))  # InexactError (use rescale)
-Decimal64{2}("1.00") / zero(Decimal64{2})      # DivideError
+typemax(Decimals.Decimal64{2}) + Decimals.Decimal64{2}("1.00")   # OverflowError
+convert(Decimals.Decimal64{2}, Decimals.Decimal64{4}("1.2345"))  # InexactError (use Decimals.rescale)
+Decimals.Decimal64{2}("1.00") / zero(Decimals.Decimal64{2})      # DivideError
 ```
 
 At the REPL a decimal displays as plain digits (`1234.56`); `repr` and `show`
 give the round-trippable typed form, `Decimal{18,2,Int64}("1234.56")`.
 
-`Decimal`, `DecimalValue`, `Decimal32`, `Decimal64`, `Decimal128`,
-`Decimal256`, `rescale`, `divide`, and `@dec_str` are exported.
+Only `Decimal` and `@dec_str` are exported. `Decimals.DecimalValue`,
+`Decimals.Decimal32`, `Decimals.Decimal64`, `Decimals.Decimal128`,
+`Decimals.Decimal256`, `Decimals.rescale`, and `Decimals.divide` are public.
 `Decimals.normalize`, `Decimals.unscaled`, `Decimals.scale`,
 `Decimals.writedecimal!`, `Decimals.decimallength`, and
 `Decimals.AbstractDecimal` are public but not exported; `normalize` stays
@@ -99,22 +99,21 @@ qualified so that it does not collide with `LinearAlgebra.normalize`.
 `Decimal{P,S,T}` holds `unscaled::T` and means `unscaled * 10^-S`, with the
 invariant `|unscaled| < 10^P`. `P` is the precision, `S` the scale
 (`0 <= S <= P`), and `T` the storage integer. The four aliases name the
-storage tiers at their maximum precision, which are the tiers
-Arrow/Parquet/DuckDB define:
+storage tiers at their maximum precision:
 
 | alias | expands to | digits | storage | typical use |
 |---|---|---|---|---|
-| `Decimal32{S}` | `Decimal{9,S,Int32}` | 9 | 32-bit | narrow Arrow/Parquet columns |
-| `Decimal64{S}` | `Decimal{18,S,Int64}` | 18 | 64-bit | money, most SQL `DECIMAL` |
-| `Decimal128{S}` | `Decimal{38,S,Int128}` | 38 | 128-bit | DuckDB/Spark default width |
-| `Decimal256{S}` | `Decimal{76,S,Decimals.Int256}` | 76 | 256-bit | Arrow `Decimal256` |
+| `Decimals.Decimal32{S}` | `Decimal{9,S,Int32}` | 9 | 32-bit | narrow Arrow/Parquet columns |
+| `Decimals.Decimal64{S}` | `Decimal{18,S,Int64}` | 18 | 64-bit | money, most SQL `DECIMAL` |
+| `Decimals.Decimal128{S}` | `Decimal{38,S,Int128}` | 38 | 128-bit | DuckDB/Spark default width |
+| `Decimals.Decimal256{S}` | `Decimal{76,S,Decimals.Int256}` | 76 | 256-bit | Arrow `Decimals.Decimal256` |
 
 Write `Decimal{P,S}` when a schema pins a precision narrower than the tier
 maximum; the storage type is filled in from `P`. `Decimal{7,2}` and
-`Decimal32{2}` both store an `Int32` and differ only in the number of digits
+`Decimals.Decimal32{2}` both store an `Int32` and differ only in the number of digits
 they accept before throwing.
 
-`DecimalValue{T}` is the runtime-scale sibling: it stores the scale (an
+`Decimals.DecimalValue{T}` is the runtime-scale sibling: it stores the scale (an
 `Int32` in `0:16383`) alongside the coefficient, for row-oriented values
 whose scale travels with the value rather than the column, such as a
 PostgreSQL `numeric` dscale or the result of `Decimals.normalize`. It is
@@ -132,14 +131,14 @@ subtyping and there are no `NaN` or `Inf` values: `isfinite` is always
 | `+`, `-` | promote both operands value-preservingly, then compute checked: `OverflowError`, never a silent round or wrap |
 | `*` | exact; result scale is `S1 + S2`, precision `min(P1+P2, 76)`, checked |
 | `*` by an `Integer` | scale-preserving, since multiplying by a count should not widen the scale |
-| `/` | rounds half-even at scale `max(S1, S2)`; `divide(x, y, mode)` for any other `RoundingMode` |
+| `/` | rounds half-even at scale `max(S1, S2)`; `Decimals.divide(x, y, mode)` for any other `RoundingMode` |
 | `sum` | accumulates in a wider storage tier, where overflow is provably impossible (below 1.7e20 elements for a 64-bit-tier column), so the reduction is both safe and vectorizable |
 | `div`, `rem`, `mod`, `fld`, `cld`, `divrem` | real implementations in every rounding mode, not float fallbacks |
 | `round`, `trunc`, `floor`, `ceil` | exact and in-type, with a `digits` keyword |
-| `convert`, constructors | exact or throw (`InexactError`/`OverflowError`) |
-| `Decimal{P,S}(::AbstractFloat)` | rounds half-even at scale `S`, as cross-representation float conversions in Base do; `DecimalValue(x)` keeps the exact binary expansion instead |
+| `convert`, numeric constructors | integer/rational/decimal sources are exact or throw; float sources round half-even |
+| `Decimal{P,S}(::AbstractFloat)` | rounds half-even at scale `S`, as cross-representation float conversions in Base do; `Decimals.DecimalValue(x)` keeps the exact binary expansion instead |
 | `parse`, `tryparse` | provided by the Parsers extension; round half-even at the target scale, like `parse(Float64, s)`; `tryparse` returns `nothing` |
-| `rescale`, `round(D, x, mode)` | the explicit rounding conversions between decimal types |
+| `Decimals.rescale`, `round(D, x, mode)` | the explicit rounding conversions between decimal types |
 | `==`, `<`, `hash` | by numeric value across scales, precisions, and number types: `dec"1.20" == dec"1.2" == 12//10`, and `hash` agrees with an equal `Int`, `Float64`, or `Rational` |
 | `≈` | exact equality between decimals, since Base's `rtoldefault` is 0 for a non-`AbstractFloat` `Real`, as for `Rational`; pass `rtol`/`atol` for a tolerance |
 | `string`, `print`, `writedecimal!` | always the plain positional form, which is a valid SQL literal, CSV field, and JSON number |
@@ -165,21 +164,21 @@ These load as package extensions when the companion package is present.
 
   ```julia
   using Decimals, Parsers
-  Parsers.parse(Decimal64{2}, "1234.56")                    # 1234.56
-  Parsers.parse(Decimal64{2}, "1,25"; decimal=',')          # 1.25
-  Parsers.parse(Decimal64{2}, "1.005"; rounding=RoundUp)    # 1.01
+  Parsers.parse(Decimals.Decimal64{2}, "1234.56")                    # 1234.56
+  Parsers.parse(Decimals.Decimal64{2}, "1,25"; decimal=',')          # 1.25
+  Parsers.parse(Decimals.Decimal64{2}, "1.005"; rounding=RoundUp)    # 1.01
   buf = codeunits("12.34,56.78")
-  Parsers.parsenext(Decimal64{2}, buf, 1, length(buf))      # (12.34, 6, Parsers.RC_OK)
+  Parsers.parsenext(Decimals.Decimal64{2}, buf, 1, length(buf))      # (12.34, 6, Parsers.RC_OK)
   ```
 
-- **Printf.jl**: `%f`, `%e`, and `%g` print the true digits, routing through a
-  1024-bit `BigFloat` rather than `Float64(x)`, so nothing past 17
-  significant digits is lost. `%d` is exact-or-`InexactError`, matching
+- **Printf.jl**: `%f`, `%e`, and `%g` round decimal digits half-even before
+  conversion to `BigFloat`. Binary precision grows with the requested output
+  precision, so decimal ties and wide values retain the correct digits. `%d` is exact-or-`InexactError`, matching
   `Rational`.
 
 - **JSON.jl** (1.x): decimals serialize as JSON numbers with their exact
   digits, neither as strings nor `Float64`-rounded, so
-  `JSON.json((price = Decimal64{2}("1234.56"),))` gives `{"price":1234.56}`.
+  `JSON.json((price = Decimals.Decimal64{2}("1234.56"),))` gives `{"price":1234.56}`.
 
 - **LinearAlgebra.jl**: `A*B`, `dot`, `tr`, and `A+B` stay exact decimal.
   Factorizations (`lu`, `qr`, `svd`, `eigen`, `det`, `inv`, `\`, and the rest)
@@ -213,7 +212,7 @@ and `hash` by numeric value, `parse`/`string` round-trips for ordinary
 values, `round(x; digits)`, `dec"..."` literals, and `Decimals.normalize`.
 The context API (`Context`, `with_context`, `CONTEXT`) is gone, and the
 single untyped `Decimal` becomes a choice between `Decimal{P,S}` and
-`DecimalValue`.
+`Decimals.DecimalValue`.
 
 The [migration guide](https://JuliaMath.github.io/Decimals.jl/dev/migration/)
 covers the replacements one by one;
@@ -222,7 +221,7 @@ API comparison.
 
 ## Performance
 
-On an Apple M3 Max under Julia 1.12.6, with money-shaped `Decimal64{2}`
+On an Apple M3 Max under Julia 1.12.6, with money-shaped `Decimals.Decimal64{2}`
 values: 6.57 ns to parse a string, 1.57 ns to multiply, and 0.309 ns to add,
 the last two measured as folds over a 1000-element corpus. A million-element
 column holds about 8 bytes of live heap per element, against about 80 for

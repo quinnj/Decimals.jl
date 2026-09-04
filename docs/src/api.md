@@ -9,11 +9,11 @@ CurrentModule = Decimals
 ```@docs
 Decimals.AbstractDecimal
 Decimal
-DecimalValue
-Decimal32
-Decimal64
-Decimal128
-Decimal256
+Decimals.DecimalValue
+Decimals.Decimal32
+Decimals.Decimal64
+Decimals.Decimal128
+Decimals.Decimal256
 ```
 
 ## Literals
@@ -25,8 +25,8 @@ Decimal256
 ## Rounding and rescaling
 
 ```@docs
-rescale
-divide
+Decimals.rescale
+Decimals.divide
 Decimals.normalize
 ```
 

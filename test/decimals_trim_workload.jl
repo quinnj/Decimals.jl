@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, Decimal64, Decimal128, rescale, divide
 # JuliaC --trim=safe workload: drives the major Decimals.jl paths — parsing
 # (Base.parse/tryparse and the Parsers.jl extension), checked arithmetic,
 # division with rounding modes, rescale/normalize, conversions and rounding,

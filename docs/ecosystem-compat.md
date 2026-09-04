@@ -1,5 +1,10 @@
 # `Decimal` and `DecimalValue` across the Julia ecosystem
 
+The 117-trial study below is historical evidence from the initial rewrite.
+The release audit added regressions for decimal Printf ties, signed-zero
+ordering, mixed-scale broadcast overflow, and structured matrix operations.
+Use `docs/src/manual.md#integration-boundaries` for the current adapter limits.
+
 A design note on how these types behave when they leave the package: what
 happens when Arrow, PostgreSQL, MySQL, or CSV hand them to DataFrames,
 Statistics, Plots, JuMP, DiffEq, Unitful, or JSON, and which operations
@@ -153,8 +158,8 @@ is exact-or-throw.
   stringifies `Float64(x)`, rounding anything past 17 significant digits.
   Verified against JSON 1.7.1. JSON 1.x still pins Parsers 1–2, so it cannot
   share an environment with Parsers 3; the Parsers extension loads as a no-op
-  under Parsers 2 so the pairing resolves, and the in-suite JSON tests
-  (`test/json.jl`) activate once JSON gains Parsers 3 compatibility.
+  under Parsers 2 so the pairing resolves. CI runs `test/json/runtests.jl` in
+  its own JSON 1 / Parsers 2 environment, independently of the Parsers 3 suite.
 - JSON3 stringifies unknown `Real`s via `Float64`. Overriding that needs a
   `JSON3`/`StructTypes` weak dependency, deferred until someone asks, since
   JSON.jl v1 is the going-forward line.

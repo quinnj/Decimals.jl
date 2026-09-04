@@ -41,7 +41,7 @@ end
 
 An exact decimal literal. Produces the minimal-fitting `Decimal{P,S}` (so
 `dec"1.25" isa Decimal{3,2,Int32}`), constant-folded at parse time; literals
-beyond 76 digits of precision fall back to a `DecimalValue{Int256}`. Digit
+beyond 76 digits of precision fall back to a `Decimals.DecimalValue{Int256}`. Digit
 groups may be separated with underscores (`dec"1_000_000.25"`). The literal
 must be exactly representable — no silent rounding.
 
@@ -54,20 +54,20 @@ rounded value.
 
 Because the type is minimal-fitting, a literal used in arithmetic promotes to
 whatever the other operand needs; annotate explicitly
-(`Decimal64{2}("1.25")`, or `convert`) when a column type is wanted.
+(`Decimals.Decimal64{2}("1.25")`, or `convert`) when a column type is wanted.
 """
 macro dec_str(s)
     return _decliteral(s)
 end
 
 """
-    normalize(x) -> DecimalValue
+    normalize(x) -> Decimals.DecimalValue
 
 The value of `x` with all trailing zeros removed from the coefficient and the
 scale reduced to match (scales never go below zero, so integer values keep
-scale 0): `normalize(dec"1.2000") == DecimalValue(12, 1)`.
+scale 0): `normalize(dec"1.2000") == Decimals.DecimalValue(12, 1)`.
 
-The result is always a [`DecimalValue`](@ref) — the scale is a property of the
+The result is always a [`Decimals.DecimalValue`](@ref) — the scale is a property of the
 value, not of the type — and keeps the input's storage type. The numeric value
 is unchanged (`normalize(x) == x` always), so this only matters where the
 *representation* is observable: the digits `string` prints, or a wire format

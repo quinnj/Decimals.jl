@@ -163,6 +163,7 @@ function Base.isless(x::AbstractDecimal, y::AbstractFloat)
 end
 function Base.isless(x::AbstractFloat, y::AbstractDecimal)
     isnan(x) && return false
+    iszero(x) && signbit(x) && iszero(y) && return true
     return _cmpfloat(y, x) > 0
 end
 Base.:(<)(x::AbstractDecimal, y::AbstractFloat) = _cmpfloat(x, y) == -1

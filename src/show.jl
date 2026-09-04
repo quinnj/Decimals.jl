@@ -56,7 +56,7 @@ function Base.show(io::IO, x::DecimalValue{T}) where {T <: StorageInt}
         print(io, string(x))
         return nothing
     end
-    print(io, "DecimalValue{")
+    print(io, "Decimals.DecimalValue{")
     _printstoragetype(io, T)
     print(io, "}(\"", string(x), "\")")
     return nothing
@@ -171,9 +171,10 @@ function _parsehint(io::IO, exc::MethodError, argtypes, kwargs)
     (T isa Type && T <: Type && T.parameters[1] <: Union{Decimal, DecimalValue}) ||
         return nothing
     print(io, "\nParsing decimals from strings is provided by the Parsers extension: ",
-          "`using Parsers` and then `parse`/`tryparse` (or `Parsers.parse`) work on ",
+          "Parsers 3 is required. With that version, `using Parsers` enables ",
+          "`parse`/`tryparse` (or `Parsers.parse`) on ",
           "decimal types. Literals (`dec\"1.25\"`) and string constructors ",
-          "(`Decimal64{2}(\"1.25\")`) need no extension.")
+          "(`Decimals.Decimal64{2}(\"1.25\")`) need no extension.")
     return nothing
 end
 

@@ -97,7 +97,7 @@ field, or a JSON number. This is the allocation-free counterpart to
 ```jldoctest
 julia> buf = zeros(UInt8, 16);
 
-julia> n = Decimals.writedecimal!(buf, 1, Decimal64{2}("-1.25"))
+julia> n = Decimals.writedecimal!(buf, 1, Decimals.Decimal64{2}("-1.25"))
 6
 
 julia> String(buf[1:n-1])

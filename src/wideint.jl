@@ -192,6 +192,7 @@ for F in (Float64, Float32, Float16)
     @eval (::Type{$F})(x::_Wide) = $F(BigInt(x))
 end
 (::Type{T})(x::AbstractFloat) where {T <: _Wide} = T(BigInt(x))
+(::Type{T})(x::BigFloat) where {T <: _Wide} = T(BigInt(x))
 Base.BigFloat(x::_Wide) = BigFloat(BigInt(x))
 
 # ---- IO: raw little-endian bytes, as for the machine integers ----

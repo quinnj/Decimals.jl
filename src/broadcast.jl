@@ -95,9 +95,11 @@ function _bcaddsubmix(a::Vector{Decimal{P1, S1, T}}, b::Vector{Decimal{P2, S2, T
     db = S - S2
     pa = _upow10(_utype(TR), da) % TR
     pb = _upow10(_utype(TR), db) % TR
-    la = da == 0 ? typemax(TR) : typemax(TR) ÷ pa
-    lb = db == 0 ? typemax(TR) : typemax(TR) ÷ pb
     mm = _maxmag(RT) % TR
+    # Each operand must fit the promoted decimal before arithmetic, just as
+    # in the scalar path. Storage bounds alone allow cancellation to bypass it.
+    la = mm ÷ pa
+    lb = mm ÷ pb
     n = length(a)
     dest = Vector{RT}(undef, n)
     bad = false

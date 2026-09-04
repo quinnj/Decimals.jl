@@ -5,6 +5,7 @@
 module DecimalsParsersExt
 
 using Decimals
+using Decimals: DecimalValue
 import Parsers
 
 # This extension needs the Parsers 3 kernels, but the compat bound admits

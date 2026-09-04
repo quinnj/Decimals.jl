@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, Decimal64
 # Ecosystem-surface tests: big/rationalize/rand and the LinearAlgebra/Printf
 # extensions. Factorizations route to Float64 rather than silently rounding
 # scales inside generic lu!; matmul/dot/+ stay exact decimal.

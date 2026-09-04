@@ -1,5 +1,11 @@
 # Benchmarks
 
+The archived harness and reported timings target commit `2bc479d`, before the
+release audit reduced the export set. To adapt its scripts to the current API,
+import the names each script uses explicitly, for example
+`using Decimals: Decimal64, DecimalValue, rescale, divide`. The recorded results
+are historical measurements, not fresh measurements of the current checkout.
+
 `PERF.md` is the benchmark report for Decimals 1.0: methodology, the measured
 numbers, and the six charts in `charts/`. Everything needed to reproduce it is
 packed in `harness.tar.xz` so the repository does not carry the machinery in

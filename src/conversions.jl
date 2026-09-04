@@ -30,6 +30,7 @@ end
 # ---- Integer -> Decimal ----
 
 function Decimal{P, S, T}(x::Integer) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     neg = x < zero(x)
     xm = _tomag256(x)
     mag, ovf = _scaleup(xm, S)
@@ -51,6 +52,7 @@ Decimal{P, S, T}(x::Bool) where {P, S, T <: StorageInt} = Decimal{P, S, T}(Int(x
 end
 
 function Decimal{P, S, T}(x::BigInt) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     mag = abs(x) * big(10)^S
     mag > _tobig(UInt256(_maxmag(Decimal{P, S, T}))) &&
         _throwoverflow(Decimal{P, S, T}, x)
@@ -60,6 +62,7 @@ end
 # ---- Rational -> Decimal ----
 
 function _fromrational(::Type{Decimal{P, S, T}}, x::Rational, mode) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     iszero(x.den) && _throwinexact(Decimal{P, S, T}, x)
     neg = x.num < zero(x.num)
     n = _tomag256(x.num)
@@ -73,6 +76,8 @@ end
 
 @noinline function _fromrational_big(::Type{Decimal{P, S, T}}, x::Rational,
                                      mode) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
+    iszero(x.den) && _throwinexact(Decimal{P, S, T}, x)
     num = abs(_tobigsigned(x.num)) * big(10)^S
     den = abs(_tobigsigned(x.den))
     q, r = divrem(num, den)
@@ -101,6 +106,7 @@ end
 
 function _fromfloat(::Type{Decimal{P, S, T}}, x::AbstractFloat,
                     mode::RoundingMode) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     isfinite(x) || _throwinexact(Decimal{P, S, T}, x)
     iszero(x) && return zero(Decimal{P, S, T})
     num, pow, den = Base.decompose(x)  # x == num * 2^pow / den, den == ±1
@@ -200,6 +206,7 @@ end
 
 function _torescaled(::Type{Decimal{P, S, T}}, m::UInt256, neg::Bool, s::Int,
                      mode, x) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     if s <= S
         mag, ovf = _scaleup(m, S - s)
         ovf && _throwoverflow(Decimal{P, S, T}, x)
@@ -231,6 +238,7 @@ end
 @inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt256, sc::Int,
                              neg::Bool, sticky::Bool,
                              mode::RoundingMode) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     U = _utype(T)
     if !sticky && mag <= UInt256(typemax(U))
         return _fitnarrow(Decimal{P, S, T}, (mag % U), sc, neg, mode)
@@ -257,6 +265,7 @@ end
 @inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt64, sc::Int,
                              neg::Bool, sticky::Bool,
                              mode::RoundingMode) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     sticky && return _fitdecimal(Decimal{P, S, T}, UInt256(mag), sc, neg, sticky, mode)
     if sizeof(T) <= 8
         return _fitnarrow(Decimal{P, S, T}, mag, sc, neg, mode)
@@ -267,6 +276,7 @@ end
 @inline function _fitdecimal(::Type{Decimal{P, S, T}}, mag::UInt128, sc::Int,
                              neg::Bool, sticky::Bool,
                              mode::RoundingMode) where {P, S, T <: StorageInt}
+    _checkdecparams(Val(P), Val(S), T)
     sticky && return _fitdecimal(Decimal{P, S, T}, UInt256(mag), sc, neg, sticky, mode)
     if sizeof(T) <= 16
         return _fitnarrow(Decimal{P, S, T}, mag, sc, neg, mode)
@@ -403,12 +413,12 @@ _round(::Type{Decimal{P, S, T}}, x::DecimalValue, mode::RoundingMode) where {P, 
     _torescaled(Decimal{P, S, T}, x.unscaled, scale(x), mode, x)
 
 """
-    rescale(D::Type{<:Decimal}, x, mode=RoundNearest) -> D
-    rescale(x::DecimalValue, s::Integer, mode=RoundNearest) -> DecimalValue
+    Decimals.rescale(D::Type{<:Decimal}, x, mode=RoundNearest) -> D
+    Decimals.rescale(x::Decimals.DecimalValue, s::Integer, mode=RoundNearest) -> Decimals.DecimalValue
 
 Move a decimal to another scale, rounding with `mode` when the target scale
 cannot hold `x` exactly. The first form targets a `Decimal` type `D` (whose
-scale is a type parameter); the second returns a [`DecimalValue`](@ref) at the
+scale is a type parameter); the second returns a [`Decimals.DecimalValue`](@ref) at the
 runtime scale `s`, which must be in `0:16383`.
 
 `mode` is any of `RoundNearest` (half-even, the default),
@@ -421,10 +431,10 @@ throws `OverflowError`.
 `round(D, x, mode)` is the same operation spelled Base's way.
 
 ```jldoctest
-julia> rescale(Decimal64{2}, Decimal64{4}("1.2356"), RoundUp)
+julia> Decimals.rescale(Decimals.Decimal64{2}, Decimals.Decimal64{4}("1.2356"), RoundUp)
 1.24
 
-julia> rescale(DecimalValue(12345, 3), 1)
+julia> Decimals.rescale(Decimals.DecimalValue(12345, 3), 1)
 12.3
 ```
 """
@@ -666,7 +676,7 @@ Base.promote_rule(::Type{<:AbstractDecimal}, ::Type{F}) where {F <: AbstractFloa
 Base.promote_rule(::Type{Decimal{P, S, T}}, ::Type{Rational{I}}) where {P, S, T <: StorageInt, I} =
     Rational{promote_type(T, I)}
 Base.promote_rule(::Type{DecimalValue{T}}, ::Type{Rational{I}}) where {T <: StorageInt, I} =
-    Rational{promote_type(T, I)}
+    Rational{BigInt}
 
 Base.promote_rule(::Type{DecimalValue{T1}}, ::Type{DecimalValue{T2}}) where {T1 <: StorageInt, T2 <: StorageInt} =
     DecimalValue{promote_type(T1, T2)}

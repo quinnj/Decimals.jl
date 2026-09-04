@@ -19,12 +19,10 @@ end
     include("floatconv.jl")
     include("literals.jl")
     include("ecosystem.jl")
+    include("printf.jl")
+    include("release.jl")
     include("fastpaths.jl")
-    if Base.find_package("JSON") !== nothing
-        include("json.jl")
-    else
-        println("[suite] JSON not in test env (needs JSON with Parsers 3 compat); skipping json.jl")
-    end
+    # JSON 1 + Parsers 2 has its own CI environment in test/json.
     include("parsers.jl")
     include("trim_compile_tests.jl")
 end

@@ -1,3 +1,4 @@
+using Decimals: Decimal32, Decimal64, Decimal256
 # Broadcast kernel tests: SIMD paths must agree exactly with scalar ops.
 using Decimals
 using Decimals: Int256, UInt256

@@ -1,0 +1,10 @@
+[deps]
+Decimals = "abce61dc-4473-55a0-ba07-351d65e31d42"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Decimals = "1"
+JSON = "1"
+Parsers = "2.7"

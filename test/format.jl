@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, Decimal64
 # Fast-formatter tests: differential against digit-by-digit construction.
 using Decimals
 using Decimals: writedecimal!, decimallength, unscaled, scale, _tobigsigned

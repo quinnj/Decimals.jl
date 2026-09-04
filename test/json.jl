@@ -1,8 +1,5 @@
-# JSON 1.x integration tests. JSON 1.x currently pins Parsers 1-2 while this
-# suite needs Parsers 3 (parsers ext + trim workload), so the two cannot share
-# the test environment until JSON gains Parsers 3 compat; runtests includes
-# this file only when JSON is resolvable. The hook itself is one line and is
-# also covered by a standalone-env check (see docs/ecosystem-compat.md).
+# JSON 1.x integration tests. CI runs these in test/json, independently of
+# the Parsers 3 suite, because JSON 1.x currently requires Parsers 1-2.
 import JSON
 
 @testset "JSON exact numbers" begin

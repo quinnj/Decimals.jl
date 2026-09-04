@@ -1,3 +1,4 @@
+using Decimals: divide
 # Float conversion differential: the libcall-free divide path must agree with
 # the exact BigInt slow path everywhere, including constructed half-ulp ties.
 using Decimals

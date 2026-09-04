@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, Decimal32, Decimal64, Decimal256, rescale
 # Type-layer tests: construction, conversion, comparison, hashing, parse/print.
 using Decimals
 using Decimals: unscaled, scale, _tobigsigned

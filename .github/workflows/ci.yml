@@ -15,6 +15,23 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
+  json:
+    name: JSON 1 and Parsers 2 - Julia ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ['1.10', '1']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v3
+      - name: Install JSON test environment
+        run: julia --project=test/json -e 'using Pkg; Pkg.develop(path=pwd()); Pkg.instantiate()'
+      - name: Test exact JSON output and Parsers 2 coexistence
+        run: julia --project=test/json test/json/runtests.jl
+
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}

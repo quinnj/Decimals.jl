@@ -137,10 +137,10 @@ end
 end
 
 """
-    divide(x, y, mode=RoundNearest)
+    Decimals.divide(x, y, mode=RoundNearest)
 
 Divide two decimals, rounding the true quotient at scale `max(scale(x),
-scale(y))` with `mode`. `x / y` is exactly `divide(x, y, RoundNearest)`
+scale(y))` with `mode`. `x / y` is exactly `Decimals.divide(x, y, RoundNearest)`
 (half-even) — there is no global rounding state, so a different mode is always
 an argument, never a context.
 
@@ -149,14 +149,14 @@ an argument, never a context.
 `DivideError`; a quotient too large for the result type throws `OverflowError`.
 For `Decimal` operands the result type is derived from the operand parameters
 (the widest quotient that can occur, capped at the 76-digit tier); for
-[`DecimalValue`](@ref) operands it keeps the promoted storage type and the
+[`Decimals.DecimalValue`](@ref) operands it keeps the promoted storage type and the
 runtime scale `max(scale(x), scale(y))`.
 
 ```jldoctest
-julia> divide(Decimal64{2}("1.00"), Decimal64{2}("3.00"))
+julia> Decimals.divide(Decimals.Decimal64{2}("1.00"), Decimals.Decimal64{2}("3.00"))
 0.33
 
-julia> divide(Decimal64{2}("1.00"), Decimal64{2}("3.00"), RoundUp)
+julia> Decimals.divide(Decimals.Decimal64{2}("1.00"), Decimals.Decimal64{2}("3.00"), RoundUp)
 0.34
 ```
 """

@@ -3,11 +3,10 @@
 Exact fixed-point decimal numbers for Julia.
 
 [`Decimal{P,S,T}`](@ref Decimal) is an isbits value holding one integer
-coefficient, with the precision `P` and scale `S` fixed in the type. That is
-the same `(precision, scale, storage width)` description Arrow, Parquet,
-DuckDB, PostgreSQL, and MySQL use for a decimal column, so a
-`Vector{Decimal{18,2,Int64}}` already has the layout of a decimal column
-buffer and needs no per-element conversion at a format boundary.
+coefficient, with the precision `P` and scale `S` fixed in the type. A vector stores these coefficients contiguously. Arrow buffers with the same
+width and host byte order can share that layout. Other wire formats require
+format-specific encoding; see the wire API in the manual.
+
 
 Arithmetic is exact and checked. `+`, `-`, and `*` neither round nor wrap;
 they throw `OverflowError` when a result does not fit. Where rounding is
@@ -32,29 +31,29 @@ using Decimals
 
 # Construct: from a literal, from a string, or from a wire coefficient
 dec"1.25"                              # Decimal{3,2,Int32}, the minimal fitting type
-Decimal64{2}("1234.56")                # Decimal{18,2,Int64}, a money column
-reinterpret(Decimal64{2}, 123456)      # 1234.56, zero-copy from an Arrow buffer
+Decimals.Decimal64{2}("1234.56")                # Decimal{18,2,Int64}, a money column
+reinterpret(Decimals.Decimal64{2}, 123456)      # 1234.56, zero-copy from an Arrow buffer
 
 # + and - keep the scale and are checked; * is exact; / rounds
-Decimal64{2}("1.20") + Decimal64{2}("0.05")     # 1.25    :: Decimal{18,2,Int64}
-Decimal64{2}("1.25") * Decimal64{3}("2.500")    # 3.12500 :: Decimal{36,5,Int128}
-Decimal64{2}("1.00") / Decimal64{2}("3.00")     # 0.33    (half-even at scale 2)
-sum(fill(Decimal64{2}("0.10"), 10))             # 1.00    :: Decimal{38,2,Int128}
+Decimals.Decimal64{2}("1.20") + Decimals.Decimal64{2}("0.05")     # 1.25    :: Decimal{18,2,Int64}
+Decimals.Decimal64{2}("1.25") * Decimals.Decimal64{3}("2.500")    # 3.12500 :: Decimal{36,5,Int128}
+Decimals.Decimal64{2}("1.00") / Decimals.Decimal64{2}("3.00")     # 0.33    (half-even at scale 2)
+sum(fill(Decimals.Decimal64{2}("0.10"), 10))             # 1.00    :: Decimal{38,2,Int128}
 
 # Rounding is an argument, not a mode to switch on
-divide(Decimal64{2}("1.00"), Decimal64{2}("3.00"), RoundUp)   # 0.34
-rescale(Decimal64{2}, Decimal64{4}("1.2356"), RoundUp)        # 1.24
-round(Decimal64{4}("1.2346"); digits=2)                       # 1.2300
+Decimals.divide(Decimals.Decimal64{2}("1.00"), Decimals.Decimal64{2}("3.00"), RoundUp)   # 0.34
+Decimals.rescale(Decimals.Decimal64{2}, Decimals.Decimal64{4}("1.2356"), RoundUp)        # 1.24
+round(Decimals.Decimal64{4}("1.2346"); digits=2)                       # 1.2300
 
-# DecimalValue carries its scale per value, like a PostgreSQL numeric dscale
-DecimalValue(12345, 3)                 # 12.345
-rescale(DecimalValue(12345, 3), 1)     # 12.3
-Decimals.normalize(dec"1.2000")        # 1.2 :: DecimalValue{Int32}
+# Decimals.DecimalValue carries its scale per value, like a PostgreSQL numeric dscale
+Decimals.DecimalValue(12345, 3)                 # 12.345
+Decimals.rescale(Decimals.DecimalValue(12345, 3), 1)     # 12.3
+Decimals.normalize(dec"1.2000")        # 1.2 :: Decimals.DecimalValue{Int32}
 
 # Printing and conversion
-string(Decimal64{2}("-12.30"))         # "-12.30", always positional
-Float64(Decimal64{2}("1.25"))          # 1.25, correctly rounded
-Rational(Decimal64{2}("1.25"))         # 5//4, exact
+string(Decimals.Decimal64{2}("-12.30"))         # "-12.30", always positional
+Float64(Decimals.Decimal64{2}("1.25"))          # 1.25, correctly rounded
+Rational(Decimals.Decimal64{2}("1.25"))         # 5//4, exact
 ```
 
 Parsing lives in the Parsers extension, so `parse` and `tryparse` need
@@ -63,8 +62,8 @@ Parsing lives in the Parsers extension, so `parse` and `tryparse` need
 ```julia
 using Decimals, Parsers
 
-parse(Decimal64{2}, "1234.567")        # 1234.57, half-even at the target scale
-tryparse(Decimal64{2}, "nope")         # nothing
+parse(Decimals.Decimal64{2}, "1234.567")        # 1234.57, half-even at the target scale
+tryparse(Decimals.Decimal64{2}, "nope")         # nothing
 ```
 
 String constructors and `dec"..."` literals use the package's own exact
@@ -73,9 +72,9 @@ scanner and work without any extension.
 Overflow, inexactness, and division by zero are errors:
 
 ```julia
-typemax(Decimal64{2}) + Decimal64{2}("1.00")   # OverflowError
-convert(Decimal64{2}, Decimal64{4}("1.2345"))  # InexactError (use rescale)
-Decimal64{2}("1.00") / zero(Decimal64{2})      # DivideError
+typemax(Decimals.Decimal64{2}) + Decimals.Decimal64{2}("1.00")   # OverflowError
+convert(Decimals.Decimal64{2}, Decimals.Decimal64{4}("1.2345"))  # InexactError (use Decimals.rescale)
+Decimals.Decimal64{2}("1.00") / zero(Decimals.Decimal64{2})      # DivideError
 ```
 
 ## Where to go next

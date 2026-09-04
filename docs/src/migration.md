@@ -24,7 +24,7 @@ the precision and scale in the type, matching the
 `(precision, scale, width)` triple those systems already use, so a `Vector`
 of them is a column buffer; and arithmetic is exact and checked, with
 rounding available only as an explicit argument.
-[`DecimalValue{T}`](@ref DecimalValue) covers the row-oriented case where the
+[`Decimals.DecimalValue{T}`](@ref Decimals.DecimalValue) covers the row-oriented case where the
 scale travels per value.
 
 The full API comparison, including three bugs found in 0.5.1 while writing
@@ -49,8 +49,8 @@ it, is in `docs/comparison-with-0.5.1.md` in the repository.
 
 | 0.x | 1.0 |
 |---|---|
-| `Decimal(1.25)`, one untyped decimal | choose a type: `Decimal64{2}("1.25")` for a fixed-scale column, [`DecimalValue`](@ref) when the scale is per value, `dec"1.25"` for a literal |
-| silent rounding to context precision on `+`/`-`/`*` | exact and checked; opt into rounding with [`rescale(D, x, mode)`](@ref rescale) or [`divide(x, y, mode)`](@ref divide) |
+| `Decimal(1.25)`, one untyped decimal | choose a type: `Decimals.Decimal64{2}("1.25")` for a fixed-scale column, [`Decimals.DecimalValue`](@ref) when the scale is per value, `dec"1.25"` for a literal |
+| silent rounding to context precision on `+`/`-`/`*` | exact and checked; opt into rounding with [`Decimals.rescale(D, x, mode)`](@ref Decimals.rescale) or [`Decimals.divide(x, y, mode)`](@ref Decimals.divide) |
 | `Context`, `with_context`, `@with_context`, `CONTEXT`, `rounding(Decimal)` | removed; rounding is an argument at each call site |
 | `DivisionByZeroError`, `UndefinedDivisionError` | Base's `DivideError` |
 | `Decimal <: AbstractFloat` | `Decimal <: Real`; the `AbstractFloat` claim is what produced 0.x's `floatmin`/`floatmax`/`Inf` bug reports |
@@ -74,7 +74,8 @@ the 1.0 form names the target scale and the mode at the call site:
 
 ```julia
 # 1.0
-rescale(Decimal64{10}, divide(a, b, RoundUp))
+Decimals.divide(Decimals.rescale(Decimals.Decimal64{10}, a),
+                Decimals.rescale(Decimals.Decimal64{10}, b), RoundUp)
 ```
 
 It is more to write, and in exchange the result no longer depends on which
@@ -93,7 +94,7 @@ total = a * b + c
 total = a * b + c                        # scale S_a+S_b, checked
 
 # …or say what scale you want
-total = rescale(Decimal64{2}, a * b + c) # half-even into 2 decimal places
+total = Decimals.rescale(Decimals.Decimal64{2}, a * b + c) # half-even into 2 decimal places
 ```
 
 ## What is lost
@@ -107,14 +108,14 @@ one Base offers for `Rational` arithmetic that outgrows its integer type.
 
 Worth knowing about coming from 0.x:
 
-- The `Decimal32` / `Decimal64` / `Decimal128` / `Decimal256` tiers, with
+- The `Decimals.Decimal32` / `Decimals.Decimal64` / `Decimals.Decimal128` / `Decimals.Decimal256` tiers, with
   precision and scale carried in the type.
-- [`DecimalValue`](@ref) for runtime scales.
+- [`Decimals.DecimalValue`](@ref) for runtime scales.
 - The zero-copy wire API: `Decimals.unscaled`, `Decimals.scale`,
   `reinterpret` construction, [`writedecimal!`](@ref Decimals.writedecimal!),
-  and [`decimallength`](@ref Decimals.decimallength), memcpy-compatible with
-  Arrow/Parquet/DuckDB buffers.
-- The explicit rounding API: [`rescale`](@ref), [`divide`](@ref), and
+  and [`decimallength`](@ref Decimals.decimallength). Arrow buffers can share
+  the same layout; other wire formats require their own encoding.
+- The explicit rounding API: [`Decimals.rescale`](@ref), [`Decimals.divide`](@ref), and
   `round(D, x, mode)`, in seven modes and with no global state.
 - Real `div` / `rem` / `mod` / `fld` / `cld` / `divrem` implementations in
   every rounding mode; 0.x had only `AbstractFloat` fallbacks.
@@ -128,5 +129,5 @@ Worth knowing about coming from 0.x:
 ## A note for downstream packages
 
 LibPQ.jl pins `Decimals = 0.4.1`, a pre-0.5 API that already stopped working
-with 0.5.x, so 1.0 is no worse for it, and [`DecimalValue`](@ref) is the
+with 0.5.x, so 1.0 is no worse for it, and [`Decimals.DecimalValue`](@ref) is the
 natural target for a PostgreSQL `numeric`, whose scale travels per value.

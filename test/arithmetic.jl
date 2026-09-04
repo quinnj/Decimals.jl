@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, Decimal64, divide
 # Arithmetic differential tests against the Rational{BigInt} oracle.
 using Decimals
 using Decimals: unscaled, scale, _tobigsigned, _maxmag, _tobig

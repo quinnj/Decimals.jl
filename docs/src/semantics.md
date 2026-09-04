@@ -11,15 +11,15 @@ cannot be exact, either a rounding mode was passed or an exception is thrown.
 | `+`, `-` | promote both operands value-preservingly, then compute checked: `OverflowError`, never a silent round or wrap |
 | `*` | exact; result scale is `S1 + S2`, precision `min(P1+P2, 76)`, checked |
 | `*` by an `Integer` | scale-preserving; the precision grows by the integer's digit count |
-| `/` | rounds half-even at scale `max(S1, S2)`; [`divide(x, y, mode)`](@ref divide) for any other mode |
+| `/` | rounds half-even at scale `max(S1, S2)`; [`Decimals.divide(x, y, mode)`](@ref Decimals.divide) for any other mode |
 | `sum` | accumulates in a wider storage tier, where overflow is provably impossible (below 1.7e20 elements for a 64-bit-tier column), so the reduction is both safe and vectorizable |
 | `div`, `rem`, `mod`, `fld`, `cld`, `divrem` | real implementations in every rounding mode, not float fallbacks |
 | `round`, `trunc`, `floor`, `ceil` | exact and in-type, with a `digits` keyword; no `sigdigits` |
-| `convert`, constructors | exact or throw (`InexactError` / `OverflowError`) |
+| `convert`, numeric constructors | integer/rational/decimal sources are exact or throw; float sources round half-even |
 | `Decimal{P,S}(::AbstractFloat)` | rounds half-even at scale `S`, as cross-representation float conversions in Base do |
-| `DecimalValue(::AbstractFloat)` | the exact binary expansion, which is what a runtime scale is for |
+| `Decimals.DecimalValue(::AbstractFloat)` | the exact binary expansion, which is what a runtime scale is for |
 | `parse`, `tryparse` | provided by the Parsers extension; round half-even at the target scale, like `parse(Float64, s)`; `tryparse` returns `nothing` |
-| [`rescale`](@ref), `round(D, x, mode)` | the explicit rounding conversions between decimal types |
+| [`Decimals.rescale`](@ref), `round(D, x, mode)` | the explicit rounding conversions between decimal types |
 | `==`, `<`, `hash` | by numeric value across scales, precisions, and number types |
 | `≈` | exact equality between decimals (`rtoldefault` is 0 for a non-`AbstractFloat` `Real`, as for `Rational`) |
 | `string`, `print`, `writedecimal!` | always the plain positional form |
@@ -48,8 +48,8 @@ Rounding is never a mode to switch on. There is no context object, no scoped
 value, no `setrounding`. Wherever a rounding decision has to be made, the
 mode is an argument:
 
-- [`divide(x, y, mode)`](@ref divide) instead of `/`
-- [`rescale(D, x, mode)`](@ref rescale), [`rescale(v, s, mode)`](@ref rescale)
+- [`Decimals.divide(x, y, mode)`](@ref Decimals.divide) instead of `/`
+- [`Decimals.rescale(D, x, mode)`](@ref Decimals.rescale), [`Decimals.rescale(v, s, mode)`](@ref Decimals.rescale)
 - `round(D, x, mode)`, `round(I, x, mode)` for integer targets
 - `round(x, mode; digits)` within a type
 - `rounding=` on `Parsers.parse`
@@ -75,8 +75,8 @@ folds are type-stable. The result-type rules:
 | `sum(::Vector{Decimal{P,S,T}})` | `Decimal{38,S,Int128}` for the 32- and 64-bit tiers, `Decimal{76,S,Int256}` for the 128-bit tier, unchanged for `Int256` |
 | decimal ⊕ `AbstractFloat` | the float type; floats win promotion |
 | decimal ⊕ `Rational{I}` | `Rational`, the exact type that can hold the result |
-| `DecimalValue{T1}` ⊕ `DecimalValue{T2}` | `DecimalValue{promote_type(T1,T2)}`, scale `max` |
-| `DecimalValue` ⊕ `Decimal` | `DecimalValue` with the promoted storage type |
+| `Decimals.DecimalValue{T1}` ⊕ `Decimals.DecimalValue{T2}` | `Decimals.DecimalValue{promote_type(T1,T2)}`, scale `max` |
+| `Decimals.DecimalValue` ⊕ `Decimal` | `Decimals.DecimalValue` with the promoted storage type |
 
 The 76-digit cap is where the `Int256` tier ends; an operation whose exact
 result would need more digits throws rather than truncating.
@@ -94,18 +94,17 @@ Out of a decimal:
 | `Int`, `BigInt`, any `Integer` | exact or `InexactError`; `round`/`trunc`/`floor`/`ceil` with an `Integer` type argument are the rounding forms |
 
 `Integer(x)` returns the value in the storage tier's own integer type, so
-`Integer(Decimal64{2}("5.00"))` is an `Int64` and `Integer(Decimal256{2}("5.00"))`
+`Integer(Decimals.Decimal64{2}("5.00"))` is an `Int64` and `Integer(Decimals.Decimal256{2}("5.00"))`
 is a `Decimals.Int256`. Ask for `Int(x)` when you want an `Int`.
 
-Into a decimal, everything is exact-or-throw except the two documented
-rounding entry points, `AbstractFloat` construction and `parse`. Both round
-half-even, which is what `parse(Float64, s)` and every cross-representation
-float conversion in Base do.
+Integer, rational, and decimal sources convert exactly or throw. Float
+construction and conversion, string construction, and `parse` round half-even
+at the target scale. Runtime-scale float construction is exact or throws.
 
 ## Equality, ordering, and hashing
 
 Comparison is exact and cross-type. `dec"1.20"`, `dec"1.2"`, `12//10`, and
-`Decimal128{9}("1.200000000")` all compare equal, and all hash equal.
+`Decimals.Decimal128{9}("1.200000000")` all compare equal, and all hash equal.
 Comparisons against floats are done exactly, by cross-multiplying in the
 2/5-power domain rather than promoting the decimal to `Float64`, so a decimal
 too wide for a `Float64` still compares correctly. `dec"1.2" == 1.2` is
@@ -128,13 +127,13 @@ CSV field, and JSON number, and always round-trips through `parse`.
 
 Display is separate: `show(io, MIME"text/plain", x)`, which is what the REPL
 calls, prints the positional form up to 44 characters and switches to
-scientific notation beyond it, so a scale-1000 `DecimalValue` does not fill a
+scientific notation beyond it, so a scale-1000 `Decimals.DecimalValue` does not fill a
 screen with zeros. Two-argument `show` gives the typed constructor form,
 `Decimal{18,2,Int64}("1234.56")`, which is what `repr` and container display
 use.
 
-`Printf`'s `%f`/`%e`/`%g` print the true digits through a 1024-bit
-`BigFloat`; `%d` is exact-or-`InexactError`. `JSON.json` emits exact digits.
+`Printf`'s `%f`/`%e`/`%g` round in decimal before conversion to a sufficiently
+precise `BigFloat`; `%d` is exact-or-`InexactError`. `JSON.json` emits exact digits.
 Both are package extensions.
 
 ## The implicit `Real` interface

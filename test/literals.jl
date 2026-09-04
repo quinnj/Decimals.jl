@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, divide
 # Literal macro, normalize, and scientific-notation display.
 using Decimals
 using Decimals: Decimals as D, unscaled, scale

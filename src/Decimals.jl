@@ -2,8 +2,7 @@ module Decimals
 
 import Random
 
-export Decimal, DecimalValue, Decimal32, Decimal64, Decimal128, Decimal256,
-       rescale, divide, @dec_str
+export Decimal, @dec_str
 
 include("wideint.jl")
 include("tables.jl")
@@ -30,7 +29,8 @@ function __init__()
 end
 
 @static if VERSION >= v"1.11"
-    eval(Expr(:public, :normalize, :unscaled, :scale, :AbstractDecimal,
+    eval(Expr(:public, :DecimalValue, :Decimal32, :Decimal64, :Decimal128,
+              :Decimal256, :rescale, :divide, :normalize, :unscaled, :scale, :AbstractDecimal,
               :writedecimal!, :decimallength))
 end
 

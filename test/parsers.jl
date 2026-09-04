@@ -1,3 +1,4 @@
+using Decimals: DecimalValue, Decimal64
 # Parsers.jl extension tests: fast path agreement with the core parser, wide
 # and sticky inputs against a BigInt oracle, tokenizer semantics.
 using Decimals, Parsers
@@ -5,7 +6,22 @@ using Decimals: unscaled, scale, _tobigsigned
 using Decimals: Int256, UInt256
 using Test, Random
 
+function coretryparse(DT, str)
+    try
+        return DT(str)
+    catch e
+        e isa Union{ArgumentError, OverflowError} || rethrow()
+        return nothing
+    end
+end
+
 @testset "parsers ext" begin
+    @testset "invalid target parameters" begin
+        for D in (Decimal{9,-1,Int32}, Decimal{1_000_000,0,Int32}, Decimal{:bad,0,Int32})
+            @test_throws ArgumentError Parsers.parse(D, "1")
+            @test_throws ArgumentError Parsers.tryparse(D, "1")
+        end
+    end
     @testset "whole-value basics" begin
         @test Parsers.parse(Decimal{18,2}, "1.25") === Decimal{18,2}("1.25")
         @test Parsers.parse(Decimal64{2}, " -42.055 ") === Decimal{18,2}("-42.06")
@@ -46,7 +62,7 @@ using Test, Random
             str = sgn * ip * fp * ex
             for DT in (Decimal{38,6,Int128}, Decimal{18,4,Int64}, DecimalValue{Int128})
                 a = Parsers.tryparse(DT, str)
-                b = Base.tryparse(DT, str)
+                b = coretryparse(DT, str)
                 @test a === b
             end
         end
@@ -58,7 +74,7 @@ using Test, Random
             str = String(rand(rng, UInt8('0'):UInt8('9'), nint)) *
                   (nfrac > 0 ? "." * String(rand(rng, UInt8('0'):UInt8('9'), nfrac)) : "")
             for DT in (Decimal{38,6,Int128}, Decimal{76,40,Int256})
-                @test Parsers.tryparse(DT, str) === Base.tryparse(DT, str)
+                @test Parsers.tryparse(DT, str) === coretryparse(DT, str)
             end
         end
     end
